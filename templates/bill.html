@@ -301,7 +301,7 @@ async function processArtists(artList, vars) {
 }
 
 function billArtists(vars,d){
-    newApi('POST','report/79265113?JSON_KV?FR_date='+d,'processArtists','',vars);
+    newApi('POST','report/79265113?JSON_KV&FR_date='+d,'processArtists','',vars);
 }
 function oneArtistBill(json,vars){
     if(!json&&billSess>0)
