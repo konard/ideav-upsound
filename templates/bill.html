@@ -67,9 +67,6 @@ function checkShares(json){
     }
     $('.reresh').show();
 }
-function flipDate(d){
-    return d.substr(-4)+d.substr(3,2)+d.substr(0,2);
-}
 var billSess=0,artList;
 function rebill(){
     const vars={el:$('.bill-line-new').find('.rebill')[0],date:$('.bill-line-new').find('.stream-date').html()};
@@ -83,8 +80,7 @@ function rebill(){
     });
 
     if(byArtist==='')
-        billArtists(vars);
-        //oneBill(undefined,vars);
+        billArtists(vars,vars.date);
     else
         newApi('POST','report/74694050?JSON_KV&TIME=0&date='+$('.bill-line-new').find('.stream-date').html()
                                                             +byArtist,'rebillDone','confirmed=1',vars);
@@ -276,23 +272,12 @@ async function processArtists(artList, vars) {
   }
 }
 
-function billArtists(vars){
-    newApi('POST','report/79265113?JSON_KV','processArtists','',vars);
+function billArtists(vars,d){
+    newApi('POST','report/79265113?JSON_KV?FR_date='+d,'processArtists','',vars);
 }
 function oneArtistBill(json,vars){
     if(!json&&billSess>0)
         return $(vars.el).html('Error');
-}
-function oneBill(json,vars){
-    if(!json&&billSess>0)
-        return $(vars.el).html('Error');
-    const d=$('.bill-line-new').find('.stream-date').html();
-    if(billSess<=10){
-        $(vars.el).html(' '+billSess+'0% '+ajaxWait);
-        newApi('POST','report/61162329?JSON_KV&TIME=0&date='+d+'&FR_batch=%25'+(billSess++),'oneBill','confirmed=1',{el:vars.el,date:d});
-    }
-    else
-        rebillDone(json,vars);
 }
 function rebillDone(json,vars){
     $(vars.el).html(ajaxWait);
