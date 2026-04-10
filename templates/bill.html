@@ -25,6 +25,16 @@
 </tbody>
 </table>
 <p><a onclick="i=-10000;fetchStats();$(this).remove()" class="btn btn-sm btn-outline-secondary bill-all" style="display:none">Рассчитать все остальные</a></p>
+<div id="mismatches" style="display:none">
+<h5>Артисты с расхождениями</h5>
+<table class="table table-bordered w-auto">
+<tr style="background-color:#f9f9f9;">
+<th>Артист<th>ISRCID<th>Ожидалось<th>Расчёт
+</tr>
+<tbody id="mismatches-table">
+</tbody>
+</table>
+</div>
 </div>
 <script>
 const ajaxWait='<img src="/i/ajax.gif">'
@@ -118,6 +128,7 @@ async function processArtists(artList, vars) {
   let completed = 0;
   let hasError = false;
   const total = artList.length;
+  const mismatches = [];
 
   // Восстановление прогресса из cookie
   const savedProgress = getCookie('billProgress');
@@ -177,6 +188,11 @@ async function processArtists(artList, vars) {
           completed++;
           updateProgress();
           log(`✅ Успешно: ${ artist.Artist }, ISRCID:  ${ artist.ISRCID }`);
+
+          const actual = data && data[0] ? data[0].Quantity : null;
+          if (actual !== null && String(actual) !== String(artist.Quantity)) {
+              mismatches.push({ artist, expected: artist.Quantity, actual });
+          }
 
           return { success: true, artist, data };
 
@@ -257,6 +273,18 @@ async function processArtists(artList, vars) {
 
           // Удаляем cookie после завершения
           deleteCookie('billProgress');
+
+          // Отображаем расхождения если они есть
+          if (mismatches.length > 0) {
+              const tbody = document.getElementById('mismatches-table');
+              tbody.innerHTML = '';
+              for (const m of mismatches) {
+                  const tr = document.createElement('tr');
+                  tr.innerHTML = `<td>${ m.artist.Artist }</td><td>${ m.artist.ISRCID }</td><td align="right" class="text-danger font-weight-bold">${ m.expected }</td><td align="right">${ m.actual }</td>`;
+                  tbody.appendChild(tr);
+              }
+              document.getElementById('mismatches').style.display = '';
+          }
 
           // Вызываем rebillDone для обновления статистики и перехода к следующей строке
           if (vars) {
