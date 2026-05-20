@@ -28,6 +28,7 @@
 </tbody>
 </table>
 <p><a onclick="i=-10000;fetchStats();$(this).remove()" class="btn btn-sm btn-outline-secondary bill-all" style="display:none">Рассчитать все остальные</a></p>
+<p><a id="stopBill" onclick="stopRequested=true;$(this).hide()" class="btn btn-sm btn-outline-danger" style="display:none">Остановить расчет</a></p>
 <div id="mismatches" style="display:none">
 <h5>Артисты с расхождениями</h5>
 <table class="table table-bordered w-auto">
@@ -80,7 +81,7 @@ function checkShares(json){
     }
     $('.reresh').show();
 }
-var billSess=0,artList;
+var billSess=0,artList,stopRequested=false;
 function rebill(){
     const vars={el:$('.bill-line-new').find('.rebill')[0],date:$('.bill-line-new').find('.stream-date').html()};
 
@@ -121,7 +122,8 @@ function deleteCookie(name) {
 
 // Основная функция обработки
 async function processArtists(artList, vars) {
-  const initialMaxConcurrent = 2; // Сохраняем начальное значение для восстановления
+  const initialMaxConcurrent = 2; // Начальная параллельность; снижается до 1 при первой ошибке
+  const maxRetries = 3; // Issue #15: после ошибки делаем 3 попытки перерасчета
   let maxConcurrent = initialMaxConcurrent;
   const d = vars ? vars.date : $('.bill-line-new').find('.stream-date').html();
   const baseUrl = 'https://upsound.ideav.online/upsound/report/74694050?JSON_KV&confirmed=1&date='+d+'&FR_byArtist=';
@@ -132,6 +134,10 @@ async function processArtists(artList, vars) {
   let hasError = false;
   const total = artList.length;
   const mismatches = [];
+
+  // Issue #15: показываем кнопку "Остановить расчет" на время обработки
+  stopRequested = false;
+  $('#stopBill').show();
 
   // Восстановление прогресса из cookie
   const savedProgress = getCookie('billProgress');
@@ -157,8 +163,8 @@ async function processArtists(artList, vars) {
       });
   }
 
-  async function processArtist(artist, isRetry = false) {
-      if (hasError) return null;
+  async function processArtist(artist, retryCount = 0) {
+      if (hasError || stopRequested) return null;
 
       const url = baseUrl + artist.ArtistID + '&FR_ISRCID=' + artist.ISRCID;
 
@@ -203,24 +209,26 @@ async function processArtists(artList, vars) {
           // Добавляем URL к сообщению об ошибке
           const errorWithUrl = `${ error.message }\nURL: ${ url }`;
 
-          // Если это не повторная попытка, пробуем еще раз через 5 секунд
-          if (!isRetry) {
-              log(`⚠️ Ошибка, повторная попытка через 5 секунд: ${ errorWithUrl }`);
-              // Issue #9: Временно устанавливаем maxConcurrent=1 при ошибке
+          // Issue #15: при первой ошибке снижаем параллельность до 1 и не восстанавливаем,
+          // пока продолжаются ошибки/повторы
+          if (maxConcurrent !== 1) {
               maxConcurrent = 1;
-              log(`⚙️ maxConcurrent временно установлен в 1`);
+              log(`⚙️ maxConcurrent установлен в 1 после ошибки`);
+          }
+
+          // Issue #15: до maxRetries (3) повторных попыток с задержкой 5 секунд
+          if (retryCount < maxRetries) {
+              const attempt = retryCount + 1;
+              log(`⚠️ Ошибка, попытка ${ attempt }/${ maxRetries } через 5 секунд: ${ errorWithUrl }`);
               await new Promise(resolve => setTimeout(resolve, 5000));
-              const retryResult = await processArtist(artist, true);
-              // Issue #9: Восстанавливаем maxConcurrent после повторной попытки
-              maxConcurrent = initialMaxConcurrent;
-              log(`⚙️ maxConcurrent восстановлен в ${ initialMaxConcurrent }`);
-              return retryResult;
+              if (stopRequested) return null;
+              return processArtist(artist, attempt);
           }
 
           hasError = true;
           progressElement.textContent = `❌ Ошибка: ${ error.message }`;
           progressElement.style.color = 'red';
-          log(`❌ ОШИБКА: ${ errorWithUrl }`);
+          log(`❌ ОШИБКА после ${ maxRetries } попыток: ${ errorWithUrl }`);
 
           // Сохраняем состояние при ошибке (Issue #6)
           setCookie('billState', {
@@ -235,7 +243,7 @@ async function processArtists(artList, vars) {
       }
   }
 
-  async function processWithLimit(items, limit) {
+  async function processWithLimit(items) {
       const results = [];
       const executing = [];
 
@@ -243,7 +251,7 @@ async function processArtists(artList, vars) {
       const startIndex = savedProgress && savedProgress.date === d ? completed : 0;
 
       for (let idx = startIndex; idx < items.length; idx++) {
-          if (hasError) break;
+          if (hasError || stopRequested) break;
 
           const item = items[idx];
           const promise = processArtist(item).then(result => {
@@ -254,7 +262,9 @@ async function processArtists(artList, vars) {
           results.push(promise);
           executing.push(promise);
 
-          if (executing.length >= limit) {
+          // Issue #15: читаем актуальное значение maxConcurrent на каждой итерации,
+          // чтобы снижение до 1 после ошибки вступало в силу немедленно
+          if (executing.length >= maxConcurrent) {
               await Promise.race(executing);
           }
       }
@@ -267,7 +277,17 @@ async function processArtists(artList, vars) {
   log(`🚀 Начало обработки ${ total } артистов (макс. ${ maxConcurrent } параллельных)`);
 
   try {
-      const results = await processWithLimit(artList, maxConcurrent);
+      const results = await processWithLimit(artList);
+
+      // Issue #15: скрываем кнопку "Остановить расчет" по завершении обработки
+      $('#stopBill').hide();
+
+      if (stopRequested) {
+          progressElement.textContent = `⏹ Остановлено пользователем (${ completed }/${ total })`;
+          progressElement.style.color = 'orange';
+          log(`⏹ Обработка остановлена пользователем`);
+          return results.filter(r => r !== null);
+      }
 
       if (!hasError) {
           progressElement.textContent = `✅ Готово: 100% (${ total }/${ total })`;
@@ -298,6 +318,8 @@ async function processArtists(artList, vars) {
       return results.filter(r => r !== null);
 
   } catch (error) {
+      // Issue #15: скрываем кнопку "Остановить расчет" при критической ошибке
+      $('#stopBill').hide();
       log(`💥 Критическая ошибка: ${ error.message }`);
       throw error;
   }
