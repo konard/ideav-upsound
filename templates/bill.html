@@ -135,6 +135,15 @@ async function processArtists(artList, vars) {
   const total = artList.length;
   const mismatches = [];
 
+  // Issue #19: запоминаем параллельные запросы, идущие в момент ошибки,
+  // приостанавливаем их (через AbortController) и запускаем повторно
+  // только после успешного завершения исходного (конкурирующего) запроса —
+  // чтобы не было конкуренции при повторных попытках.
+  const activeRequests = new Map(); // artist => AbortController
+  const suspendedQueue = [];        // ordered list of artists awaiting re-run
+  const suspendedSet = new Set();   // membership check for suspendedQueue
+  let retryLock = Promise.resolve(); // resolves when no retry is in progress
+
   // Issue #15: показываем кнопку "Остановить расчет" на время обработки
   stopRequested = false;
   $('#stopBill').show();
@@ -165,8 +174,13 @@ async function processArtists(artList, vars) {
 
   async function processArtist(artist, retryCount = 0) {
       if (hasError || stopRequested) return null;
+      // Issue #19: если запрос был приостановлен другим (упавшим) параллельным,
+      // не запускаем его здесь — он будет запущен после успешного выполнения конкурента.
+      if (suspendedSet.has(artist)) return null;
 
       const url = baseUrl + artist.ArtistID + '&FR_ISRCID=' + artist.ISRCID;
+      const controller = new AbortController();
+      activeRequests.set(artist, controller);
 
       try {
           log(`Запрос для ${ artist.Artist } (ID: ${ artist.ArtistID }, ISRCID:  ${ artist.ISRCID })...`);
@@ -178,7 +192,8 @@ async function processArtists(artList, vars) {
               headers: {
                   'Content-Type': 'application/x-www-form-urlencoded'
               },
-              body: formData.toString()
+              body: formData.toString(),
+              signal: controller.signal
           });
 
           if (!response.ok) {
@@ -194,6 +209,7 @@ async function processArtists(artList, vars) {
               throw new Error(`Ответ не является JSON для артиста ${ artist.Artist } (ID: ${ artist.ArtistID })`);
           }
 
+          activeRequests.delete(artist);
           completed++;
           updateProgress();
           log(`✅ Успешно: ${ artist.Artist }, ISRCID:  ${ artist.ISRCID }`);
@@ -206,6 +222,15 @@ async function processArtists(artList, vars) {
           return { success: true, artist, data };
 
       } catch (error) {
+          activeRequests.delete(artist);
+
+          // Issue #19: запрос был приостановлен (abort) из-за ошибки в параллельном —
+          // тихо выходим, он будет перезапущен из suspendedQueue.
+          if (error.name === 'AbortError' || suspendedSet.has(artist)) {
+              log(`⏸ Параллельный запрос приостановлен: ${ artist.Artist }`);
+              return null;
+          }
+
           // Добавляем URL к сообщению об ошибке
           const errorWithUrl = `${ error.message }\nURL: ${ url }`;
 
@@ -216,13 +241,34 @@ async function processArtists(artList, vars) {
               log(`⚙️ maxConcurrent установлен в 1 после ошибки`);
           }
 
-          // Issue #15: до maxRetries (3) повторных попыток с задержкой 5 секунд
+          // Issue #19: запоминаем все параллельно идущие запросы и приостанавливаем их —
+          // их повторный запуск откладывается до успешного завершения текущего.
+          for (const [otherArtist, otherController] of activeRequests) {
+              if (otherArtist === artist || suspendedSet.has(otherArtist)) continue;
+              log(`⏸ Приостановлен параллельный запрос: ${ otherArtist.Artist } (ID: ${ otherArtist.ArtistID })`);
+              suspendedSet.add(otherArtist);
+              suspendedQueue.push(otherArtist);
+              try { otherController.abort(); } catch (_) {}
+          }
+
+          // Issue #19: захватываем retryLock на время задержки и повторной попытки —
+          // это блокирует планировщик в processWithLimit от запуска новых запросов,
+          // чтобы не было конкуренции с retry.
           if (retryCount < maxRetries) {
               const attempt = retryCount + 1;
               log(`⚠️ Ошибка, попытка ${ attempt }/${ maxRetries } через 5 секунд: ${ errorWithUrl }`);
-              await new Promise(resolve => setTimeout(resolve, 5000));
-              if (stopRequested) return null;
-              return processArtist(artist, attempt);
+
+              let releaseLock;
+              const prevLock = retryLock;
+              retryLock = new Promise(resolve => { releaseLock = resolve; });
+              try {
+                  await prevLock;
+                  await new Promise(resolve => setTimeout(resolve, 5000));
+                  if (stopRequested) return null;
+                  return await processArtist(artist, attempt);
+              } finally {
+                  releaseLock();
+              }
           }
 
           hasError = true;
@@ -253,6 +299,11 @@ async function processArtists(artList, vars) {
       for (let idx = startIndex; idx < items.length; idx++) {
           if (hasError || stopRequested) break;
 
+          // Issue #19: ждем завершения retry перед запуском новых запросов —
+          // чтобы не создавать конкуренции с повторной попыткой упавшего запроса.
+          await retryLock;
+          if (hasError || stopRequested) break;
+
           const item = items[idx];
           const promise = processArtist(item).then(result => {
               executing.splice(executing.indexOf(promise), 1);
@@ -269,7 +320,20 @@ async function processArtists(artList, vars) {
           }
       }
 
-      return Promise.all(results);
+      await Promise.all(results);
+
+      // Issue #19: после успешного завершения всех запросов запускаем приостановленные
+      // (которые были конкурентами упавших) — теперь без конкуренции, последовательно.
+      while (suspendedQueue.length > 0 && !hasError && !stopRequested) {
+          await retryLock;
+          if (hasError || stopRequested) break;
+          const artist = suspendedQueue.shift();
+          suspendedSet.delete(artist);
+          log(`▶️ Запуск приостановленного запроса: ${ artist.Artist } (ID: ${ artist.ArtistID })`);
+          results.push(await processArtist(artist));
+      }
+
+      return results;
   }
 
   updateProgress();
