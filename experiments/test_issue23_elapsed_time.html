@@ -1,0 +1,138 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>Test Issue #23 — execution time before Успешно / ОШИБКА</title>
+<style>
+  body { font-family: sans-serif; padding: 20px; }
+  #log { border: 1px solid #ccc; padding: 10px; max-height: 480px; overflow-y: auto; font-family: monospace; white-space: pre-wrap; }
+  #log > div { padding: 2px 0; }
+  button { margin-right: 8px; }
+</style>
+</head>
+<body>
+<h3>Test for Issue #23: Пиши время выполнения (в секундах) перед отметкой Успешно или ошибкой</h3>
+<p>Mock of <code>processArtist</code> that exercises every outcome path
+   (✅ Успешно, ⏸ Приостановлен, ⚠️ Ошибка попытка X/Y, ❌ ОШИБКА после Y попыток)
+   and verifies that the rendered log line contains a `&lt;seconds&gt;с` token right before the outcome marker.</p>
+
+<p>
+  <button onclick="run('old')">Run without fix (no seconds shown)</button>
+  <button onclick="run('new')">Run with fix (seconds shown)</button>
+  <button onclick="document.getElementById('log').innerHTML=''">Clear</button>
+</p>
+
+<div id="log"></div>
+
+<script>
+const ajaxWait = '<span class="spinner" style="display:inline-block;width:14px;height:14px;border:2px solid #999;border-top-color:transparent;border-radius:50%;animation:spin 0.7s linear infinite;vertical-align:middle"></span>';
+const styleEl = document.createElement('style');
+styleEl.textContent = '@keyframes spin { to { transform: rotate(360deg); } }';
+document.head.appendChild(styleEl);
+
+const logElement = document.getElementById('log');
+let logCounter = 0;
+
+function log(message) {
+    const timestamp = new Date().toLocaleTimeString();
+    const id = `log-entry-${ ++logCounter }`;
+    logElement.innerHTML = `<div id="${ id }">[${ timestamp }] ${ message }</div>` + logElement.innerHTML;
+    return id;
+}
+function updateLog(id, message) {
+    const el = document.getElementById(id);
+    if (!el) return;
+    const tsMatch = el.innerHTML.match(/^\[[^\]]+\]/);
+    const ts = tsMatch ? tsMatch[0] : '';
+    el.innerHTML = `${ ts } ${ message }`;
+}
+// Issue #23: same helper used in templates/bill.html
+function formatElapsed(startTime) {
+    return `${ ((Date.now() - startTime) / 1000).toFixed(2) }с`;
+}
+const sleep = ms => new Promise(r => setTimeout(r, ms));
+
+// Simulates a single processArtist attempt. `mode` controls whether the seconds
+// token is rendered or not (the "before / after" of issue #23).
+async function processArtistOnce(artist, mode, attempt, maxRetries) {
+    const requestPrefix = `Запрос для ${ artist.name } (ID: ${ artist.id }, ISRCID:  ${ artist.isrc })...`;
+    const requestLogId = log(`${ requestPrefix } ${ ajaxWait }`);
+    const startTime = Date.now();
+    const url = `https://example/upsound/report/74694050?FR_byArtist=${ artist.id }`;
+
+    const elapsedTag = () => (mode === 'new' ? ` ${ formatElapsed(startTime) }` : '');
+
+    // Simulate request: take a per-artist amount of time.
+    await sleep(artist.takeMs);
+
+    const willFail = attempt < artist.failTimes;
+    const willAbort = !!artist.abort;
+
+    if (willAbort) {
+        updateLog(requestLogId, `${ requestPrefix }${ elapsedTag() } ⏸ Приостановлен`);
+        return 'aborted';
+    }
+    if (!willFail) {
+        updateLog(requestLogId, `${ requestPrefix }${ elapsedTag() } ✅ Успешно`);
+        return 'success';
+    }
+
+    const errorMessage = `HTTP error! status: 504`;
+    const errorWithUrl = `${ errorMessage }\nURL: ${ url }`;
+
+    if (attempt < maxRetries) {
+        const a = attempt + 1;
+        updateLog(requestLogId, `${ requestPrefix }${ elapsedTag() } ⚠️ Ошибка, попытка ${ a }/${ maxRetries } через 5 секунд: ${ errorWithUrl }`);
+        return 'retry';
+    }
+    updateLog(requestLogId, `${ requestPrefix }${ elapsedTag() } ❌ ОШИБКА после ${ maxRetries } попыток: ${ errorWithUrl }`);
+    return 'final-error';
+}
+
+async function processArtist(artist, mode) {
+    const maxRetries = 3;
+    const retryDelay = 400;
+    let attempt = 0;
+    while (true) {
+        const outcome = await processArtistOnce(artist, mode, attempt, maxRetries);
+        if (outcome !== 'retry') return;
+        await sleep(retryDelay);
+        attempt++;
+    }
+}
+
+async function run(mode) {
+    logElement.innerHTML = '';
+    logCounter = 0;
+    const artists = [
+        { name: 'DM-STUDIO',   id: 80809327, isrc: 80809796, failTimes: 0, abort: false, takeMs: 600 },
+        { name: 'NEXT-ARTIST', id: 80809400, isrc: 80809801, failTimes: 1, abort: false, takeMs: 800 },
+        { name: 'ABORT-CASE',  id: 80809500, isrc: 80809802, failTimes: 0, abort: true,  takeMs: 500 },
+        { name: 'FAIL-FINAL',  id: 80809600, isrc: 80809803, failTimes: 99, abort: false, takeMs: 400 },
+    ];
+    for (const a of artists) {
+        await processArtist(a, mode);
+    }
+    log(`— ${ mode } run finished —`);
+}
+
+// Verification helper: for every "Запрос для …" row that has a final outcome marker
+// (✅ / ⏸ / ⚠️ / ❌), check whether a `<seconds>с` token appears right before the marker.
+function countRowsMissingElapsed() {
+    const rows = logElement.querySelectorAll('div');
+    let missing = 0, total = 0;
+    rows.forEach(r => {
+        const t = r.textContent || '';
+        if (!t.includes('Запрос для')) return;
+        const hasMarker = /[✅⏸⚠❌]/.test(t);
+        if (!hasMarker) return;
+        total++;
+        // Look for a "<float>с" token immediately before the marker.
+        if (!/\d+\.\d+с\s*[✅⏸⚠❌]/.test(t)) missing++;
+    });
+    return { missing, total };
+}
+window.countRowsMissingElapsed = countRowsMissingElapsed;
+</script>
+</body>
+</html>
