@@ -1,0 +1,82 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>Test Issue #17 spinner</title>
+<style>
+  body { font-family: sans-serif; padding: 20px; }
+  #log { border: 1px solid #ccc; padding: 10px; max-height: 400px; overflow-y: auto; font-family: monospace; }
+  #log > div { padding: 2px 0; }
+</style>
+</head>
+<body>
+<h3>Test for Issue #17: AJAX spinner on "Запрос для" line + "Успешно" inline</h3>
+<p><button onclick="runTest()">Run mock processing</button></p>
+<p><button onclick="runTestWithError()">Run mock processing with retry</button></p>
+<div id="log"></div>
+<script>
+// Same ajaxWait pattern used in bill.html (replaced with a simple SVG/text for local testing)
+const ajaxWait = '<span style="display:inline-block;width:14px;height:14px;border:2px solid #999;border-top-color:transparent;border-radius:50%;animation:spin 0.7s linear infinite;vertical-align:middle"></span>';
+const style = document.createElement('style');
+style.textContent = '@keyframes spin { to { transform: rotate(360deg); } }';
+document.head.appendChild(style);
+
+let logCounter = 0;
+const logElement = document.getElementById('log');
+
+function log(message) {
+    const timestamp = new Date().toLocaleTimeString();
+    const id = `log-entry-${ ++logCounter }`;
+    logElement.innerHTML = `<div id="${ id }">[${ timestamp }] ${ message }</div>` + logElement.innerHTML;
+    return id;
+}
+
+function updateLog(id, message) {
+    const el = document.getElementById(id);
+    if (!el) return;
+    const tsMatch = el.innerHTML.match(/^\[[^\]]+\]/);
+    const ts = tsMatch ? tsMatch[0] : '';
+    el.innerHTML = `${ ts } ${ message }`;
+}
+
+function sleep(ms) { return new Promise(r => setTimeout(r, ms)); }
+
+async function processArtist(artist, willFailFirst) {
+    const prefix = `Запрос для ${ artist.name } (ID: ${ artist.id }, ISRCID:  ${ artist.isrc })...`;
+    const id = log(`${ prefix } ${ ajaxWait }`);
+    await sleep(800 + Math.random() * 1200);
+    if (willFailFirst && !artist._retried) {
+        artist._retried = true;
+        updateLog(id, `${ prefix } ⚠️ Ошибка, попытка 1/3 через 5 секунд: simulated error`);
+        await sleep(1500); // shortened
+        return processArtist(artist, false);
+    }
+    updateLog(id, `${ prefix } ✅ Успешно`);
+}
+
+async function runTest() {
+    logElement.innerHTML = '';
+    const artists = [
+        { name: 'Alpha', id: 1, isrc: 'A1' },
+        { name: 'Beta',  id: 2, isrc: 'B2' },
+        { name: 'Gamma', id: 3, isrc: 'G3' },
+    ];
+    // serial for clarity
+    for (const a of artists) {
+        await processArtist(a, false);
+    }
+}
+
+async function runTestWithError() {
+    logElement.innerHTML = '';
+    const artists = [
+        { name: 'Alpha', id: 1, isrc: 'A1' },
+        { name: 'Beta',  id: 2, isrc: 'B2' },
+    ];
+    for (const a of artists) {
+        await processArtist(a, true);
+    }
+}
+</script>
+</body>
+</html>
