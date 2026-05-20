@@ -237,8 +237,9 @@ async function processArtists(artList, vars) {
 
           // Issue #19: запрос был приостановлен (abort) из-за ошибки в параллельном —
           // тихо выходим, он будет перезапущен из suspendedQueue.
+          // Issue #21: убираем крутилку из строки запроса при остановке.
           if (error.name === 'AbortError' || suspendedSet.has(artist)) {
-              log(`⏸ Параллельный запрос приостановлен: ${ artist.Artist }`);
+              updateLog(requestLogId, `${ requestPrefix } ⏸ Приостановлен`);
               return null;
           }
 
@@ -267,7 +268,8 @@ async function processArtists(artList, vars) {
           // чтобы не было конкуренции с retry.
           if (retryCount < maxRetries) {
               const attempt = retryCount + 1;
-              log(`⚠️ Ошибка, попытка ${ attempt }/${ maxRetries } через 5 секунд: ${ errorWithUrl }`);
+              // Issue #21: заменяем крутилку в строке запроса сообщением о повторе.
+              updateLog(requestLogId, `${ requestPrefix } ⚠️ Ошибка, попытка ${ attempt }/${ maxRetries } через 5 секунд: ${ errorWithUrl }`);
 
               let releaseLock;
               const prevLock = retryLock;
