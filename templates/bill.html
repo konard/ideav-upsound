@@ -43,7 +43,7 @@
 <script>
 const ajaxWait='<img src="/i/ajax.gif">'
     ,rowTemplate=$('.bill-table').html();
-var byArtist='',i=0,dates=[];
+var byArtist='',i=0,dates=[],logCounter=0;
 function checkArtists(json){
     var count=0;
     for(var i in json)
@@ -156,8 +156,18 @@ async function processArtists(artList, vars) {
 
   function log(message) {
       const timestamp = new Date().toLocaleTimeString();
-      logElement.innerHTML = `[${ timestamp }] ${ message }<br>`+logElement.innerHTML;
+      const id = `log-entry-${ ++logCounter }`;
+      logElement.innerHTML = `<div id="${ id }">[${ timestamp }] ${ message }</div>`+logElement.innerHTML;
       logElement.scrollTop = logElement.scrollHeight;
+      return id;
+  }
+
+  function updateLog(id, message) {
+      const el = document.getElementById(id);
+      if (!el) return;
+      const tsMatch = el.innerHTML.match(/^\[[^\]]+\]/);
+      const ts = tsMatch ? tsMatch[0] : '';
+      el.innerHTML = `${ ts } ${ message }`;
   }
 
   function updateProgress() {
@@ -181,9 +191,10 @@ async function processArtists(artList, vars) {
       const url = baseUrl + artist.ArtistID + '&FR_ISRCID=' + artist.ISRCID;
       const controller = new AbortController();
       activeRequests.set(artist, controller);
+      const requestPrefix = `Запрос для ${ artist.Artist } (ID: ${ artist.ArtistID }, ISRCID:  ${ artist.ISRCID })...`;
+      const requestLogId = log(`${ requestPrefix } ${ ajaxWait }`);
 
       try {
-          log(`Запрос для ${ artist.Artist } (ID: ${ artist.ArtistID }, ISRCID:  ${ artist.ISRCID })...`);
           const formData = new URLSearchParams();
           formData.append('_xsrf', xsrf);
 
@@ -212,7 +223,7 @@ async function processArtists(artList, vars) {
           activeRequests.delete(artist);
           completed++;
           updateProgress();
-          log(`✅ Успешно: ${ artist.Artist }, ISRCID:  ${ artist.ISRCID }`);
+          updateLog(requestLogId, `${ requestPrefix } ✅ Успешно`);
 
           const actual = data && data[0] ? data[0].Quantity : null;
           if (actual !== null && String(actual) !== String(artist.Quantity)) {
@@ -274,7 +285,7 @@ async function processArtists(artList, vars) {
           hasError = true;
           progressElement.textContent = `❌ Ошибка: ${ error.message }`;
           progressElement.style.color = 'red';
-          log(`❌ ОШИБКА после ${ maxRetries } попыток: ${ errorWithUrl }`);
+          updateLog(requestLogId, `${ requestPrefix } ❌ ОШИБКА после ${ maxRetries } попыток: ${ errorWithUrl }`);
 
           // Сохраняем состояние при ошибке (Issue #6)
           setCookie('billState', {
