@@ -10,7 +10,10 @@
 <p><b>Правки</b> <span id="fixes"><img src="/i/ajax.gif"></span></p>
 <p><b>Новых артистов</b> <span id="artists"><img src="/i/ajax.gif"></span></p>
 <p><b>Новых треков</b> <span id="tracks"><img src="/i/ajax.gif"></span></p>
-<p><b>Долей артистов</b> <span id="shares"><img src="/i/ajax.gif"></span> <a target="10872" title="Должно быть пусто" href="/{_global_.z}/object/10872/?F_10874=%21%25&F_U=%">Проверить доли без указани артиста</a></p>
+<p><b>Долей артистов</b> <span id="shares"><img src="/i/ajax.gif"></span>
+    <br /><a target="10872" title="Должно быть пусто" href="/{_global_.z}/object/10872/?F_10874=%21%25&F_U=%">Проверить доли без указания артиста</a>
+    <br /><a target="85777118" title="Должно быть пусто" href="/{_global_.z}/report/85777118">Артист в доле, но не в исполнителях</a>
+</p>
 <table class="table table-bordered w-auto bill" style="display:none">
 <tr style="background-color:#f9f9f9;">
 <th>Дата<th>Стримы<th>Биллинг<th>Расчёт
@@ -92,7 +95,7 @@ function rebill(){
     if(byArtist==='')
         billArtists(vars,vars.date);
     else
-        newApi('POST','report/74694050?JSON_KV&TIME=0&date='+$('.bill-line-new').find('.stream-date').html()
+        newApi('POST','report/74694050?JSON_KV&date='+$('.bill-line-new').find('.stream-date').html()
                                                             +byArtist,'rebillDone','confirmed=1',vars);
 }
 // Cookie helpers
@@ -121,7 +124,7 @@ async function processArtists(artList, vars) {
   const initialMaxConcurrent = 2; // Сохраняем начальное значение для восстановления
   let maxConcurrent = initialMaxConcurrent;
   const d = vars ? vars.date : $('.bill-line-new').find('.stream-date').html();
-  const baseUrl = 'https://upsound.ideav.online/upsound/report/74694050?JSON_KV&confirmed=1&TIME=0&date='+d+'&FR_byArtist=';
+  const baseUrl = 'https://upsound.ideav.online/upsound/report/74694050?JSON_KV&confirmed=1&date='+d+'&FR_byArtist=';
   const progressElement = vars ? vars.el : $('.rebill')[0];
   const logElement = document.getElementById('log');
 
@@ -320,7 +323,7 @@ function rebillDone(json,vars){
         newApi('POST','report/74694096?JSON_KV&FR_date='+vars.date+byArtist,'rebillRecalc','',vars.el);
 }
 function rebillRecalc(json,el){
-    $(el).html(json[0].Quantity);
+    $(el).html(json[0]?json[0].Quantity:"—");
 }
 function fetchStats(){
     const bill=dates.shift();
