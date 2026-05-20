@@ -1,0 +1,129 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>Test Issue #21 — no leftover spinner on error row</title>
+<style>
+  body { font-family: sans-serif; padding: 20px; }
+  #log { border: 1px solid #ccc; padding: 10px; max-height: 480px; overflow-y: auto; font-family: monospace; white-space: pre-wrap; }
+  #log > div { padding: 2px 0; }
+  .panel { display: flex; gap: 24px; }
+  .panel > div { flex: 1; }
+  h4 { margin-bottom: 6px; }
+  button { margin-right: 8px; }
+</style>
+</head>
+<body>
+<h3>Test for Issue #21: убирай крутилку в строке, где была ошибка</h3>
+<p>The mock below mirrors the <code>processArtist</code> retry logic from <code>templates/bill.html</code>.
+   Click <b>Buggy</b> to see the original behavior (spinner lingers on the "Запрос для…" row when an error happens).
+   Click <b>Fixed</b> to see the corrected behavior (spinner replaced inline by ⚠️ / ⏸ / ❌).</p>
+
+<p>
+  <button onclick="run('buggy')">Run with bug (spinner stays)</button>
+  <button onclick="run('fixed')">Run with fix (spinner removed)</button>
+  <button onclick="document.getElementById('log').innerHTML=''">Clear</button>
+</p>
+
+<div id="log"></div>
+
+<script>
+// Mirror ajaxWait, but render as a local CSS spinner so we don't need /i/ajax.gif
+const ajaxWait = '<span class="spinner" style="display:inline-block;width:14px;height:14px;border:2px solid #999;border-top-color:transparent;border-radius:50%;animation:spin 0.7s linear infinite;vertical-align:middle"></span>';
+const styleEl = document.createElement('style');
+styleEl.textContent = '@keyframes spin { to { transform: rotate(360deg); } }';
+document.head.appendChild(styleEl);
+
+const logElement = document.getElementById('log');
+let logCounter = 0;
+
+function log(message) {
+    const timestamp = new Date().toLocaleTimeString();
+    const id = `log-entry-${ ++logCounter }`;
+    logElement.innerHTML = `<div id="${ id }">[${ timestamp }] ${ message }</div>` + logElement.innerHTML;
+    return id;
+}
+function updateLog(id, message) {
+    const el = document.getElementById(id);
+    if (!el) return;
+    const tsMatch = el.innerHTML.match(/^\[[^\]]+\]/);
+    const ts = tsMatch ? tsMatch[0] : '';
+    el.innerHTML = `${ ts } ${ message }`;
+}
+const sleep = ms => new Promise(r => setTimeout(r, ms));
+
+// Run a single processArtist using either the BUGGY or FIXED catch block.
+async function processArtist(artist, mode) {
+    const maxRetries = 3;
+    const retryDelay = 800; // shortened from 5000 for the demo
+    let attempt = 0;
+    const url = `https://example/upsound/report/74694050?FR_byArtist=${ artist.id }`;
+
+    while (true) {
+        const requestPrefix = `Запрос для ${ artist.name } (ID: ${ artist.id }, ISRCID:  ${ artist.isrc })...`;
+        const requestLogId = log(`${ requestPrefix } ${ ajaxWait }`);
+
+        await sleep(700);
+
+        // Simulate: fail the first two attempts, succeed on the third.
+        const willFail = attempt < artist.failTimes;
+        if (!willFail) {
+            updateLog(requestLogId, `${ requestPrefix } ✅ Успешно`);
+            return;
+        }
+
+        const errorMessage = `HTTP error! status: 504`;
+        const errorWithUrl = `${ errorMessage }\nURL: ${ url }`;
+
+        if (attempt < maxRetries) {
+            const a = attempt + 1;
+            if (mode === 'fixed') {
+                // Issue #21 fix: replace the spinner on the SAME row.
+                updateLog(requestLogId, `${ requestPrefix } ⚠️ Ошибка, попытка ${ a }/${ maxRetries } через 5 секунд: ${ errorWithUrl }`);
+            } else {
+                // Buggy (pre-fix) behavior: just log a NEW line. The spinner on the original row remains.
+                log(`⚠️ Ошибка, попытка ${ a }/${ maxRetries } через 5 секунд: ${ errorWithUrl }`);
+            }
+            await sleep(retryDelay);
+            attempt++;
+            continue;
+        }
+
+        // Final failure
+        updateLog(requestLogId, `${ requestPrefix } ❌ ОШИБКА после ${ maxRetries } попыток: ${ errorWithUrl }`);
+        return;
+    }
+}
+
+async function run(mode) {
+    logElement.innerHTML = '';
+    logCounter = 0;
+    const artists = [
+        { name: 'DM-STUDIO', id: 80809327, isrc: 80809796, failTimes: 2 },
+        { name: 'NEXT-ARTIST', id: 80809400, isrc: 80809801, failTimes: 0 },
+    ];
+    for (const a of artists) {
+        await processArtist(a, mode);
+    }
+    log(`— ${ mode } run finished —`);
+}
+
+// Tiny assertion helper to surface the leftover-spinner check in the page.
+function countLeftoverSpinners() {
+    // A "leftover" spinner is one that belongs to a row whose text starts with "Запрос для"
+    // but no longer ends with ✅ / ⏸ / ⚠️ / ❌ result marker.
+    const rows = logElement.querySelectorAll('div');
+    let leftover = 0;
+    rows.forEach(r => {
+        const t = r.textContent || '';
+        if (!t.includes('Запрос для')) return;
+        const hasMarker = /[✅⏸⚠❌]/.test(t);
+        const hasSpinner = !!r.querySelector('.spinner');
+        if (hasSpinner && !hasMarker) leftover++;
+    });
+    return leftover;
+}
+window.countLeftoverSpinners = countLeftoverSpinners;
+</script>
+</body>
+</html>
