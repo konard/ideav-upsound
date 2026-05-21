@@ -337,18 +337,24 @@ async function export2Xlsx(){
         right:  {style:'thin', color:{argb:COL_BORDER}}
     };
     var fillSolid=function(argb){ return {type:'pattern', pattern:'solid', fgColor:{argb:argb}}; };
-    // Стили пары "label / value" в шапке сводки — лейбл чёрный, значение красное (см. HTML).
+    // Стили: лейбл — чёрная плашка, value-red — красная плашка (как у "Артист"/"name"
+    // и "За период"/total в HTML), bordered — без фона, только рамка #dee2e6 (как у
+    // значений метрик сводки и sales-period в HTML).
     var styleLabel=function(cell){
         cell.fill=fillSolid(COL_BLACK);
         cell.font={color:{argb:COL_LIGHT}, bold:true};
-        cell.alignment={horizontal:'center', vertical:'middle'};
+        cell.alignment={horizontal:'center', vertical:'middle', wrapText:true};
         cell.border=thinBorder;
     };
-    var styleValue=function(cell){
+    var styleRed=function(cell){
         cell.fill=fillSolid(COL_RED);
         cell.font={color:{argb:COL_LIGHT}, bold:true};
-        cell.alignment={horizontal:'center', vertical:'middle'};
+        cell.alignment={horizontal:'center', vertical:'middle', wrapText:true};
         cell.border=thinBorder;
+    };
+    var styleBordered=function(cell){
+        cell.border=thinBorder;
+        cell.alignment={horizontal:'center', vertical:'middle', wrapText:true};
     };
     // Названия колонок данных (соответствуют шапке repTable, см. строки 174-188).
     var headers=['Кол-во','Общий вал','% выплаты','Вал артиста','Альбом','Трек','Страна','Площадка','Формат контента','Тип использования','Дата отчета','Отчетный период','Вид прав'];
@@ -357,40 +363,95 @@ async function export2Xlsx(){
     var sheetName=String(artist||'Отчёт').replace(/[\\/?*:\[\]]/g,' ').substr(0,31)||'Отчёт';
     var ws=wb.addWorksheet(sheetName);
 
-    // -- Сводка: артист, период --
-    var rArtist=ws.addRow(['Артист', $('#artist').text().trim()]);
-    styleLabel(rArtist.getCell(1)); styleValue(rArtist.getCell(2));
-    rArtist.height=20;
-    var rPeriod=ws.addRow(['Период', ruDate(byId('FR_DATE').value)+' — '+ruDate(byId('TO_DATE').value)]);
-    styleLabel(rPeriod.getCell(1)); styleValue(rPeriod.getCell(2));
-    rPeriod.height=20;
-    ws.addRow([]);
+    // -- Сводка: горизонтальная раскладка, повторяющая HTML (issue #31). --
+    // 13 колонок (как у таблицы данных), сводка распределяется через mergeCells.
+    //
+    // Row 1: [Артист (A:B)][имя (C:H)][пусто (I:J)][За период (K:L)][total (M)]
+    // Row 2: [Период (A:B)][даты (C:H)][пусто (I:J)][Прослушиваний за период (K:L)][sales-period (M)]
+    var artistName = $('#artist').text().trim();
+    var periodText = ruDate(byId('FR_DATE').value)+' — '+ruDate(byId('TO_DATE').value);
+    var totalVal = toNum($('#total').text());
+    var salesPeriodVal = toNum($('#sales-period').text());
 
-    // -- Сводка: итоги. Лейбл — чёрная плашка, значение — красная, как в HTML --
-    var totals=[
-        ['Прослушиваний',         toNum($('#sales').text()),       '#,##0'],
-        ['Общий вал',             toNum($('#gross').text()),       '#,##0.00'],
-        ['Вал артиста',           toNum($('#grossshare').text()),  '#,##0.00'],
-        ['Процент артиста, %',    toNum($('#percent').text()),     '0.0'],
-        ['Артисту всего',         toNum($('#net').text()),         '#,##0.00'],
-        ['Уже выплачено',         toNum($('#paid').text()),        '#,##0.00'],
-        ['Расходы',               $('#calcs').text().trim(),       null],
-        ['Авансы',                toNum($('#advances').text()),    '#,##0.00'],
-        ['К выплате',             toNum($('#topay').text()),       '#,##0.00'],
-        ['Выручка за период',     toNum($('#total').text()),       '#,##0.00'],
-        ['Прослушиваний за период', toNum($('#sales-period').text()), '#,##0']
+    var r1 = ws.addRow([]);
+    r1.height = 22;
+    r1.getCell(1).value = 'Артист'; styleLabel(r1.getCell(1));
+    ws.mergeCells(r1.number, 1, r1.number, 2);
+    r1.getCell(3).value = artistName; styleRed(r1.getCell(3));
+    ws.mergeCells(r1.number, 3, r1.number, 8);
+    r1.getCell(11).value = 'За период'; styleLabel(r1.getCell(11));
+    ws.mergeCells(r1.number, 11, r1.number, 12);
+    r1.getCell(13).value = totalVal; styleRed(r1.getCell(13));
+    if (typeof totalVal === 'number') {
+        r1.getCell(13).numFmt = '#,##0.00';
+        r1.getCell(13).alignment = {horizontal:'right', vertical:'middle'};
+    }
+
+    var r2 = ws.addRow([]);
+    r2.height = 22;
+    r2.getCell(1).value = 'Период'; styleLabel(r2.getCell(1));
+    ws.mergeCells(r2.number, 1, r2.number, 2);
+    r2.getCell(3).value = periodText; styleRed(r2.getCell(3));
+    ws.mergeCells(r2.number, 3, r2.number, 8);
+    r2.getCell(11).value = 'Прослушиваний за период'; styleLabel(r2.getCell(11));
+    ws.mergeCells(r2.number, 11, r2.number, 12);
+    r2.getCell(13).value = salesPeriodVal; styleBordered(r2.getCell(13));
+    if (typeof salesPeriodVal === 'number') {
+        r2.getCell(13).numFmt = '#,##0';
+        r2.getCell(13).alignment = {horizontal:'right', vertical:'middle'};
+    }
+
+    ws.addRow([]); // спейсер между сводкой "артист/период" и метриками
+
+    // -- Сводка: шапка с метриками. Чередующиеся чёрные/красные плашки, как в HTML --
+    // (см. строки 143-153 шаблона: 2+2+1+1+1+1+2+1+1 колонок, расширено до 13).
+    var summaryHeaders = [
+        {span:[1,2],   label:'Прослушиваний',   color:'black'},
+        {span:[3,4],   label:'Общий вал',        color:'red'},
+        {span:[5,5],   label:'Вал артиста',      color:'black'},
+        {span:[6,6],   label:'Процент артиста',  color:'red'},
+        {span:[7,7],   label:'Артисту всего',    color:'black'},
+        {span:[8,8],   label:'Уже выплачено',    color:'red'},
+        {span:[9,10],  label:'Расходы',          color:'black'},
+        {span:[11,11], label:'Авансы',           color:'red'},
+        {span:[12,13], label:'К выплате',        color:'black'}
     ];
-    totals.forEach(function(item){
-        var r=ws.addRow([item[0], item[1]]);
-        r.height=18;
-        styleLabel(r.getCell(1));
-        styleValue(r.getCell(2));
-        if(item[2] && typeof item[1]==='number'){
-            r.getCell(2).numFmt=item[2];
-            r.getCell(2).alignment={horizontal:'right', vertical:'middle'};
-        }
+    var rHead = ws.addRow([]);
+    rHead.height = 22;
+    summaryHeaders.forEach(function(h){
+        var c = rHead.getCell(h.span[0]);
+        c.value = h.label;
+        if (h.color === 'black') styleLabel(c); else styleRed(c);
+        if (h.span[1] > h.span[0]) ws.mergeCells(rHead.number, h.span[0], rHead.number, h.span[1]);
     });
-    ws.addRow([]);
+
+    // -- Сводка: значения метрик. Только рамка #dee2e6, без фона (как в HTML, --
+    // см. строки 154-164 шаблона: style="border: 1px solid #dee2e6;").
+    var summaryValues = [
+        {span:[1,2],   value:toNum($('#sales').text()),       fmt:'#,##0'},
+        {span:[3,4],   value:toNum($('#gross').text()),       fmt:'#,##0.00'},
+        {span:[5,5],   value:toNum($('#grossshare').text()),  fmt:'#,##0.00'},
+        {span:[6,6],   value:toNum($('#percent').text()),     fmt:'0.0'},
+        {span:[7,7],   value:toNum($('#net').text()),         fmt:'#,##0.00'},
+        {span:[8,8],   value:toNum($('#paid').text()),        fmt:'#,##0.00'},
+        {span:[9,10],  value:$('#calcs').text().trim(),       fmt:null},
+        {span:[11,11], value:toNum($('#advances').text()),    fmt:'#,##0.00'},
+        {span:[12,13], value:toNum($('#topay').text()),       fmt:'#,##0.00'}
+    ];
+    var rVals = ws.addRow([]);
+    rVals.height = 20;
+    summaryValues.forEach(function(v){
+        var c = rVals.getCell(v.span[0]);
+        c.value = v.value;
+        styleBordered(c);
+        if (v.fmt && typeof v.value === 'number') {
+            c.numFmt = v.fmt;
+            c.alignment = {horizontal:'right', vertical:'middle', wrapText:true};
+        }
+        if (v.span[1] > v.span[0]) ws.mergeCells(rVals.number, v.span[0], rVals.number, v.span[1]);
+    });
+
+    ws.addRow([]); // спейсер между сводкой и таблицей данных
 
     // -- Шапка таблицы данных: серый фон #f9f9f9 + жирный + рамка (как в HTML) --
     var headerRow=ws.addRow(headers);

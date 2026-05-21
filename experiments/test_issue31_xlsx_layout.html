@@ -1,0 +1,379 @@
+<!DOCTYPE html>
+<!--
+  Issue #31 — формат отчёта в XLSX должен совпадать с HTML.
+  В HTML сводка идёт ГОРИЗОНТАЛЬНО (строка лейблов + строка значений),
+  а в текущем XLSX-экспорте — вертикально (пара label/value по строкам).
+  Цель: проверить, что новая раскладка повторяет HTML-разметку шапки
+  отчёта (см. screenshots/issue31-original.png).
+
+  Страница самодостаточна: подгружает ExcelJS с CDN, имеет mock-данные,
+  генерирует xlsx через export2Xlsx (та же логика, что в templates/info.html),
+  читает результат обратно через ExcelJS и рендерит HTML-превью с учётом
+  merged-ячеек. Превью используется для визуальной проверки и скриншотов.
+-->
+<html lang="ru">
+<head>
+<meta charset="utf-8" />
+<title>Issue #31: XLSX layout test</title>
+<style>
+body{font-family:sans-serif;padding:12px;background:#fff;}
+button{padding:8px 16px;font-size:14px;cursor:pointer;margin-right:8px;}
+.mock{display:none;}
+table.preview{border-collapse:collapse;margin-top:16px;background:#fff;}
+table.preview td{padding:6px 10px;text-align:center;vertical-align:middle;font-size:13px;}
+.label{background:#000;color:#eeeeee;font-weight:700;}
+.value-red{background:#ff0000;color:#eeeeee;font-weight:700;}
+.value-bordered{border:1px solid #dee2e6;}
+.data-header{background:#f9f9f9;font-weight:700;border:1px solid #dee2e6;}
+.data-cell{border:1px solid #dee2e6;}
+.right{text-align:right;}
+h2{margin-top:24px;}
+</style>
+</head>
+<body>
+<h1>Issue #31 — XLSX layout test</h1>
+<p>Нажмите «Generate» — справа отрисуется HTML-превью реальной структуры XLSX
+(включая объединения ячеек). Сравните с <code>docs/screenshots/issue31-original.png</code>.</p>
+<button onclick="generate()">Generate</button>
+<button onclick="download()">Download XLSX</button>
+
+<h2>Preview (читается обратно из сгенерированного XLSX)</h2>
+<div id="preview"></div>
+
+<!-- Mock DOM элементов, которые читает export2Xlsx -->
+<div class="mock">
+    <span id="artist">***еть</span>
+    <input id="FR_DATE" value="2026-05-01" />
+    <input id="TO_DATE" value="2026-05-21" />
+    <span id="sales">&nbsp;</span>
+    <span id="gross">70.0</span>
+    <span id="grossshare">&nbsp;</span>
+    <span id="percent">&nbsp;</span>
+    <span id="net">&nbsp;</span>
+    <span id="paid">&nbsp;</span>
+    <span id="calcs">Расходы: 0
+Смежные: 0</span>
+    <span id="advances">0</span>
+    <span id="topay">4 146.00</span>
+    <span id="total">0</span>
+    <span id="sales-period">0</span>
+    <table><tbody id="page">
+        <tr>
+            <td class="td td-r" style='mso-number-format:"# ###"'>1 200</td>
+            <td class="td td-r" style='mso-number-format:"# ##0.00"'>40.00</td>
+            <td class="td td-r" style='mso-number-format:"# ##0.00"'>50.0</td>
+            <td class="td td-r" style='mso-number-format:"# ##0.00"'>20.00</td>
+            <td class="td">Album A</td>
+            <td class="td">Track 1</td>
+            <td class="td">RU</td>
+            <td class="td">Spotify</td>
+            <td class="td">Audio</td>
+            <td class="td">Stream</td>
+            <td class="td">2026-05-01</td>
+            <td class="td">May 2026</td>
+            <td class="td">Master</td>
+        </tr>
+        <tr>
+            <td class="td td-r" style='mso-number-format:"# ###"'>900</td>
+            <td class="td td-r" style='mso-number-format:"# ##0.00"'>30.00</td>
+            <td class="td td-r" style='mso-number-format:"# ##0.00"'>50.0</td>
+            <td class="td td-r" style='mso-number-format:"# ##0.00"'>15.00</td>
+            <td class="td">Album B</td>
+            <td class="td">Track 2</td>
+            <td class="td">US</td>
+            <td class="td">Apple</td>
+            <td class="td">Audio</td>
+            <td class="td">Stream</td>
+            <td class="td">2026-05-15</td>
+            <td class="td">May 2026</td>
+            <td class="td">Master</td>
+        </tr>
+    </tbody></table>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/jquery@3.6.0/dist/jquery.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/exceljs@4.4.0/dist/exceljs.min.js"></script>
+<script>
+var artist = '***еть';
+function byId(id){ return document.getElementById(id); }
+function ruDate(d){ return d.substr(8,2)+'.'+d.substr(5,2)+'.'+d.substr(0,4); }
+var lastBuffer = null;
+
+// --- Копия функции export2Xlsx из templates/info.html (новая горизонтальная раскладка) ---
+async function export2Xlsx(){
+    if(typeof ExcelJS==='undefined'){
+        alert('Библиотека ExcelJS не загружена');
+        return;
+    }
+    var toNum=function(s){
+        if(s===null||s===undefined) return null;
+        var t=String(s).replace(/\s|&nbsp;| /g,'').replace(',','.');
+        if(t==='') return null;
+        var n=parseFloat(t);
+        return isFinite(n) ? n : s;
+    };
+    var COL_BLACK='FF000000', COL_RED='FFFF0000', COL_LIGHT='FFEEEEEE';
+    var COL_GREY_BG='FFF9F9F9', COL_BORDER='FFDEE2E6';
+    var thinBorder={
+        top:    {style:'thin', color:{argb:COL_BORDER}},
+        left:   {style:'thin', color:{argb:COL_BORDER}},
+        bottom: {style:'thin', color:{argb:COL_BORDER}},
+        right:  {style:'thin', color:{argb:COL_BORDER}}
+    };
+    var fillSolid=function(argb){ return {type:'pattern', pattern:'solid', fgColor:{argb:argb}}; };
+    var styleLabel=function(cell){
+        cell.fill=fillSolid(COL_BLACK);
+        cell.font={color:{argb:COL_LIGHT}, bold:true};
+        cell.alignment={horizontal:'center', vertical:'middle', wrapText:true};
+        cell.border=thinBorder;
+    };
+    var styleRed=function(cell){
+        cell.fill=fillSolid(COL_RED);
+        cell.font={color:{argb:COL_LIGHT}, bold:true};
+        cell.alignment={horizontal:'center', vertical:'middle', wrapText:true};
+        cell.border=thinBorder;
+    };
+    var styleBordered=function(cell){
+        cell.border=thinBorder;
+        cell.alignment={horizontal:'center', vertical:'middle', wrapText:true};
+    };
+    var headers=['Кол-во','Общий вал','% выплаты','Вал артиста','Альбом','Трек','Страна','Площадка','Формат контента','Тип использования','Дата отчета','Отчетный период','Вид прав'];
+
+    var wb=new ExcelJS.Workbook();
+    var sheetName=String(artist||'Отчёт').replace(/[\\/?*:\[\]]/g,' ').substr(0,31)||'Отчёт';
+    var ws=wb.addWorksheet(sheetName);
+
+    // -- Сводка: Артист / Период (горизонтально, как в HTML) --
+    // Row 1: [Артист][name (cols 3-8)][пусто 9-10][За период (11-12)][total (13)]
+    var artistName = $('#artist').text().trim();
+    var periodText = ruDate(byId('FR_DATE').value)+' — '+ruDate(byId('TO_DATE').value);
+    var totalVal = toNum($('#total').text());
+    var salesPeriodVal = toNum($('#sales-period').text());
+
+    var r1 = ws.addRow([]);
+    r1.height = 22;
+    r1.getCell(1).value = 'Артист'; styleLabel(r1.getCell(1));
+    ws.mergeCells(r1.number, 1, r1.number, 2);
+    r1.getCell(3).value = artistName; styleRed(r1.getCell(3));
+    ws.mergeCells(r1.number, 3, r1.number, 8);
+    r1.getCell(11).value = 'За период'; styleLabel(r1.getCell(11));
+    ws.mergeCells(r1.number, 11, r1.number, 12);
+    r1.getCell(13).value = totalVal; styleRed(r1.getCell(13));
+    if (typeof totalVal === 'number') {
+        r1.getCell(13).numFmt = '#,##0.00';
+        r1.getCell(13).alignment = {horizontal:'right', vertical:'middle'};
+    }
+
+    // Row 2: [Период][range (3-8)][пусто 9-10][Прослушиваний за период (11-12)][value (13)]
+    var r2 = ws.addRow([]);
+    r2.height = 22;
+    r2.getCell(1).value = 'Период'; styleLabel(r2.getCell(1));
+    ws.mergeCells(r2.number, 1, r2.number, 2);
+    r2.getCell(3).value = periodText; styleRed(r2.getCell(3));
+    ws.mergeCells(r2.number, 3, r2.number, 8);
+    r2.getCell(11).value = 'Прослушиваний за период'; styleLabel(r2.getCell(11));
+    ws.mergeCells(r2.number, 11, r2.number, 12);
+    r2.getCell(13).value = salesPeriodVal; styleBordered(r2.getCell(13));
+    if (typeof salesPeriodVal === 'number') {
+        r2.getCell(13).numFmt = '#,##0';
+        r2.getCell(13).alignment = {horizontal:'right', vertical:'middle'};
+    }
+
+    // spacer
+    ws.addRow([]);
+
+    // Row 4: шапка сводки — чередующиеся чёрные/красные плашки, как в HTML
+    var summaryHeaderRow = [
+        {span:[1,2],   label:'Прослушиваний',   color:'black'},
+        {span:[3,4],   label:'Общий вал',        color:'red'},
+        {span:[5,5],   label:'Вал артиста',      color:'black'},
+        {span:[6,6],   label:'Процент артиста',  color:'red'},
+        {span:[7,7],   label:'Артисту всего',    color:'black'},
+        {span:[8,8],   label:'Уже выплачено',    color:'red'},
+        {span:[9,10],  label:'Расходы',          color:'black'},
+        {span:[11,11], label:'Авансы',           color:'red'},
+        {span:[12,13], label:'К выплате',        color:'black'}
+    ];
+    var r4 = ws.addRow([]);
+    r4.height = 22;
+    summaryHeaderRow.forEach(function(h){
+        var c = r4.getCell(h.span[0]);
+        c.value = h.label;
+        if (h.color === 'black') styleLabel(c); else styleRed(c);
+        if (h.span[1] > h.span[0]) {
+            ws.mergeCells(r4.number, h.span[0], r4.number, h.span[1]);
+        }
+    });
+
+    // Row 5: значения сводки — только рамка #dee2e6, без фона (как в HTML)
+    var summaryValuesRow = [
+        {span:[1,2],   value:toNum($('#sales').text()),       fmt:'#,##0'},
+        {span:[3,4],   value:toNum($('#gross').text()),       fmt:'#,##0.00'},
+        {span:[5,5],   value:toNum($('#grossshare').text()),  fmt:'#,##0.00'},
+        {span:[6,6],   value:toNum($('#percent').text()),     fmt:'0.0'},
+        {span:[7,7],   value:toNum($('#net').text()),         fmt:'#,##0.00'},
+        {span:[8,8],   value:toNum($('#paid').text()),        fmt:'#,##0.00'},
+        {span:[9,10],  value:$('#calcs').text().trim(),       fmt:null},
+        {span:[11,11], value:toNum($('#advances').text()),    fmt:'#,##0.00'},
+        {span:[12,13], value:toNum($('#topay').text()),       fmt:'#,##0.00'}
+    ];
+    var r5 = ws.addRow([]);
+    r5.height = 20;
+    summaryValuesRow.forEach(function(v){
+        var c = r5.getCell(v.span[0]);
+        c.value = v.value;
+        styleBordered(c);
+        if (v.fmt && typeof v.value === 'number') {
+            c.numFmt = v.fmt;
+            c.alignment = {horizontal:'right', vertical:'middle', wrapText:true};
+        }
+        if (v.span[1] > v.span[0]) {
+            ws.mergeCells(r5.number, v.span[0], r5.number, v.span[1]);
+        }
+    });
+
+    // spacer
+    ws.addRow([]);
+
+    // Шапка таблицы данных
+    var headerRow=ws.addRow(headers);
+    headerRow.height=22;
+    headers.forEach(function(_, idx){
+        var c=headerRow.getCell(idx+1);
+        c.fill=fillSolid(COL_GREY_BG);
+        c.font={bold:true};
+        c.alignment={horizontal:'center', vertical:'middle', wrapText:true};
+        c.border=thinBorder;
+    });
+    ws.views=[{state:'frozen', ySplit:headerRow.number}];
+
+    // Данные таблицы
+    $('#page tr').each(function(){
+        var cells=$(this).find('td');
+        if(cells.length===0) return;
+        var row=[], meta=[];
+        cells.each(function(){
+            var $td=$(this);
+            var text=$td.text().trim();
+            var style=String($td.attr('style')||'');
+            if(style.indexOf('# ##0.00')!==-1){
+                var n=toNum(text);
+                row.push(typeof n==='number' ? n : text);
+                meta.push({fmt:'#,##0.00', align:'right'});
+            } else if(style.indexOf('# ###')!==-1){
+                var i=toNum(text);
+                row.push(typeof i==='number' ? i : text);
+                meta.push({fmt:'#,##0', align:'right'});
+            } else {
+                row.push(text);
+                meta.push({fmt:null, align:'left'});
+            }
+        });
+        var r=ws.addRow(row);
+        meta.forEach(function(m, idx){
+            var c=r.getCell(idx+1);
+            if(m.fmt) c.numFmt=m.fmt;
+            c.alignment={horizontal:m.align, vertical:'middle'};
+            c.border=thinBorder;
+        });
+    });
+
+    var dataRowCount=ws.rowCount - headerRow.number;
+    ws.columns.forEach(function(col, idx){
+        var maxLen=(headers[idx]||'').length;
+        for(var k=1; k<=dataRowCount; k++){
+            var v=ws.getRow(headerRow.number + k).getCell(idx+1).value;
+            if(v!=null){
+                var s=(typeof v==='number') ? v.toLocaleString('ru-RU') : String(v);
+                if(s.length>maxLen) maxLen=s.length;
+            }
+        }
+        col.width=Math.min(40, Math.max(10, maxLen + 2));
+    });
+
+    return await wb.xlsx.writeBuffer();
+}
+
+// Сборка HTML-превью по сгенерированному XLSX (читаем обратно через ExcelJS)
+async function renderPreview(buffer){
+    var wb = new ExcelJS.Workbook();
+    await wb.xlsx.load(buffer);
+    var ws = wb.worksheets[0];
+
+    // ExcelJS хранит merges в ws._merges как { 'A1:B1': {top,left,bottom,right} }
+    var merges = {};
+    var mergedSlaves = {};
+    Object.keys(ws._merges || {}).forEach(function(key){
+        var m = ws._merges[key];
+        var top = m.top || m.model.top;
+        var left = m.left || m.model.left;
+        var bottom = m.bottom || m.model.bottom;
+        var right = m.right || m.model.right;
+        merges[top + ':' + left] = {rowSpan: bottom-top+1, colSpan: right-left+1};
+        for(var rr=top; rr<=bottom; rr++) for(var cc=left; cc<=right; cc++){
+            if(rr===top && cc===left) continue;
+            mergedSlaves[rr+':'+cc] = true;
+        }
+    });
+
+    var maxCol = 13;
+    var html = '<table class="preview">';
+    for(var r=1; r<=ws.rowCount; r++){
+        html += '<tr>';
+        for(var c=1; c<=maxCol; c++){
+            if (mergedSlaves[r+':'+c]) continue;
+            var cell = ws.getCell(r, c);
+            var span = merges[r+':'+c];
+            var rs = span ? ' rowspan="'+span.rowSpan+'"' : '';
+            var cs = span ? ' colspan="'+span.colSpan+'"' : '';
+
+            // классифицируем стиль
+            var fillArgb = cell.fill && cell.fill.fgColor && cell.fill.fgColor.argb;
+            var hasBorder = !!cell.border;
+            var className = '';
+            if (fillArgb === 'FF000000') className = 'label';
+            else if (fillArgb === 'FFFF0000') className = 'value-red';
+            else if (fillArgb === 'FFF9F9F9') className = 'data-header';
+            else if (hasBorder) className = 'value-bordered';
+
+            var alignR = cell.alignment && cell.alignment.horizontal === 'right';
+            var classAttr = className + (alignR ? ' right' : '');
+
+            var val = cell.value;
+            var disp = '';
+            if (val == null) disp = '';
+            else if (typeof val === 'number') {
+                if (cell.numFmt && cell.numFmt.indexOf('.00') !== -1) disp = val.toFixed(2).replace(/\B(?=(\d{3})+(?!\d))/g, ' ');
+                else if (cell.numFmt && cell.numFmt.indexOf('0.0') !== -1) disp = val.toFixed(1);
+                else disp = Math.round(val).toLocaleString('ru-RU').replace(/,/g,' ');
+            } else {
+                disp = String(val).replace(/\n/g, '<br>');
+            }
+
+            html += '<td' + rs + cs + (classAttr ? ' class="'+classAttr+'"' : '') + '>' + disp + '</td>';
+        }
+        html += '</tr>';
+    }
+    html += '</table>';
+    return html;
+}
+
+async function generate(){
+    lastBuffer = await export2Xlsx();
+    document.getElementById('preview').innerHTML = await renderPreview(lastBuffer);
+}
+
+function download(){
+    if (!lastBuffer) { alert('Сначала нажмите Generate'); return; }
+    var blob = new Blob([lastBuffer], {type:'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'});
+    var url = window.URL.createObjectURL(blob);
+    var a = document.createElement('a');
+    document.body.appendChild(a);
+    a.href = url;
+    a.download = 'issue31-test.xlsx';
+    a.click();
+    setTimeout(function(){ window.URL.revokeObjectURL(url); document.body.removeChild(a); },0);
+}
+</script>
+</body>
+</html>
