@@ -1,0 +1,489 @@
+<style>
+.td {
+    border: 1px solid #dee2e6;
+    padding: .5rem;
+}
+.td-r {
+    text-align: right;
+}
+.dp, .pages {
+    border: 1px solid #aaa;
+    border-radius: 4px;        
+}
+.sc {
+    border-bottom: 1px dashed;
+    cursor: pointer;
+    font-size: small;
+}
+.blue-text{
+    color: #1283da;
+    font-weight: 700;
+}
+.black-text{
+    color: #333;
+    font-weight: 400;
+}
+.extra-calcs{
+    display: none;
+}
+</style>
+<table class="m-1 mb-3">
+    <tr>
+        <td class="pr-3">
+            &nbsp;<br />
+            <select class="reps" id="FR_ArtistID">
+            <!-- Begin:pub_Artist --><option value="{ID}" id="{ID}" s="{s}">{Artist}</option><!-- End:pub_Artist -->
+            </select>
+        </td>
+        <td class="pr-3">
+            Начальная дата<br />
+            <input type="date" id="FR_DATE" name="FR_DATE" value="" class="dp" autocomplete="off">
+        </td>
+        <td class="pr-3">
+            Конечная дата<br />
+            <input type="date" id="TO_DATE" name="TO_DATE" value="" class="dp" autocomplete="off">
+        </td>
+        <td id="export" class="pr-3">
+            &nbsp;<br />
+            <a onclick="export2Excel()" value="XLS" style="border: 1px solid; -moz-border-radius: 5px; -webkit-border-radius:5px; -khtml-border-radius:5px; border-radius:5px; padding:3px; display: inline-block">XLS</a>
+            &nbsp;&nbsp;<a id="json" href="/{_global_.z}/report/74695136?JSON&FR_ArtistID=0" style="border: 1px solid; -moz-border-radius: 5px; -webkit-border-radius:5px; -khtml-border-radius:5px; border-radius:5px; padding:3px; display: inline-block">JSON</a>
+        </td>
+        <td id="progress" class="pr-3">
+        </td>
+    </tr>
+    <tr>
+        <td class="pr-3">
+            <select class="albums" id="FR_AlbumID">
+            </select>
+        </td>
+        <td colspan="3">
+            <span style="border-bottom: 1px dashed" class="sc" onclick="$('#FR_DATE').val('2000-01-01');$('#TO_DATE').val(new Date().getFullYear()+'-12-31')">Всё</span>&nbsp;&nbsp;
+            <span style="border-bottom: 1px dashed" class="sc" onclick="$('#FR_DATE').val((new Date().getFullYear()-1)+'-01-01');$('#TO_DATE').val((new Date().getFullYear()-1)+'-12-31')">Прошлый год</span>&nbsp;&nbsp;
+            <span style="border-bottom: 1px dashed" class="sc" onclick="$('#FR_DATE').val(new Date().getFullYear()+'-01-01');$('#TO_DATE').val(new Date().getFullYear()+'-12-31')">Этот год</span>&nbsp;&nbsp;
+            <span style="border-bottom: 1px dashed" class="sc" onclick="var d=new Date();d.setDate(1);d.setHours(-1);$('#TO_DATE').val(d.getFullYear()+'-'+('0'+(d.getMonth()+1)).substr(-2)+'-'+d.getDate());$('#FR_DATE').val(d.getFullYear()+'-'+('0'+(d.getMonth()+1)).substr(-2)+'-01')">Прошлый месяц</span>&nbsp;&nbsp;
+            <span style="border-bottom: 1px dashed" class="sc" onclick="d=new Date();$('#TO_DATE').val(d.toISOString().substr(0, 10));$('#FR_DATE').val(d.getFullYear()+'-'+('0'+(d.getMonth()+1)).substr(-2)+'-01')">Этот месяц</span>
+        </td>
+    </tr>
+</table>
+<table id="repTable" class="m-1">
+<thead>
+    <tr>
+        <td colspan="10">
+            <h3 class="p-0">Отчет по дистрибуции
+            <a onclick="$('.helper').toggle(333)"><svg class="ml-1" width="28" height="28" viewBox="0 0 28 28" fill="none" xmlns="http://www.w3.org/2000/svg">
+                <mask id="path-1-inside-1_4_442" fill="white">
+                <path d="M14 24C19.5228 24 24 19.5228 24 14C24 8.47715 19.5228 4 14 4C8.47715 4 4 8.47715 4 14C4 19.5228 8.47715 24 14 24Z"></path>
+                <path d="M11.09 11C11.3251 10.3317 11.7892 9.76811 12.4 9.40913C13.0108 9.05016 13.7289 8.91894 14.4272 9.03871C15.1255 9.15849 15.7588 9.52152 16.2151 10.0635C16.6713 10.6055 16.9211 11.2915 16.92 12C16.92 14 13.92 15 13.92 15"></path>
+                <path d="M15 19C15 19.5523 14.5523 20 14 20C13.4477 20 13 19.5523 13 19C13 18.4477 13.4477 18 14 18C14.5523 18 15 18.4477 15 19Z"></path>
+                </mask>
+                <path d="M10.1467 10.6682C9.96339 11.1891 10.2372 11.7601 10.7582 11.9433C11.2791 12.1266 11.8501 11.8528 12.0333 11.3318L10.1467 10.6682ZM16.92 12L15.92 11.9985V12H16.92ZM13.6038 14.0513C13.0798 14.226 12.7967 14.7923 12.9713 15.3162C13.146 15.8402 13.7123 16.1233 14.2362 15.9487L13.6038 14.0513ZM23 14C23 18.9706 18.9706 23 14 23V25C20.0751 25 25 20.0751 25 14H23ZM14 23C9.02944 23 5 18.9706 5 14H3C3 20.0751 7.92487 25 14 25V23ZM5 14C5 9.02944 9.02944 5 14 5V3C7.92487 3 3 7.92487 3 14H5ZM14 5C18.9706 5 23 9.02944 23 14H25C25 7.92487 20.0751 3 14 3V5ZM12.0333 11.3318C12.1901 10.8863 12.4994 10.5106 12.9066 10.2713L11.8933 8.547C11.0789 9.02563 10.4601 9.77705 10.1467 10.6682L12.0333 11.3318ZM12.9066 10.2713C13.3138 10.0319 13.7926 9.94447 14.2581 10.0243L14.5962 8.05311C13.6652 7.89341 12.7077 8.06837 11.8933 8.547L12.9066 10.2713ZM14.2581 10.0243C14.7236 10.1042 15.1459 10.3462 15.4501 10.7075L16.9801 9.41953C16.3718 8.69686 15.5273 8.2128 14.5962 8.05311L14.2581 10.0243ZM15.4501 10.7075C15.7542 11.0689 15.9207 11.5262 15.92 11.9985L17.92 12.0015C17.9214 11.0569 17.5884 10.1422 16.9801 9.41953L15.4501 10.7075ZM15.92 12C15.92 12.4691 15.5549 12.9582 14.8653 13.4179C14.5509 13.6275 14.2294 13.789 13.9826 13.8987C13.8606 13.9529 13.7603 13.9929 13.6929 14.0186C13.6593 14.0314 13.6341 14.0406 13.6187 14.0461C13.611 14.0488 13.6058 14.0506 13.6032 14.0515C13.602 14.0519 13.6014 14.0521 13.6014 14.0521C13.6015 14.0521 13.6017 14.052 13.6021 14.0519C13.6023 14.0518 13.6025 14.0517 13.6028 14.0516C13.6029 14.0516 13.6032 14.0515 13.6032 14.0515C13.6035 14.0514 13.6038 14.0513 13.92 15C14.2362 15.9487 14.2365 15.9486 14.2368 15.9485C14.2369 15.9484 14.2372 15.9483 14.2375 15.9483C14.2379 15.9481 14.2385 15.9479 14.239 15.9478C14.2401 15.9474 14.2414 15.9469 14.2429 15.9464C14.2459 15.9454 14.2496 15.9442 14.254 15.9427C14.2628 15.9396 14.2744 15.9356 14.2887 15.9305C14.3173 15.9203 14.3565 15.9061 14.4049 15.8876C14.5015 15.8508 14.6356 15.7971 14.7949 15.7263C15.1106 15.586 15.5391 15.3725 15.9747 15.0821C16.7851 14.5418 17.92 13.5309 17.92 12H15.92ZM14 19V21C15.1046 21 16 20.1046 16 19H14ZM14 19H12C12 20.1046 12.8954 21 14 21V19ZM14 19V17C12.8954 17 12 17.8954 12 19H14ZM14 19H16C16 17.8954 15.1046 17 14 17V19Z" fill="#1A1A1A" mask="url(#path-1-inside-1_4_442)"></path>
+                </svg>
+                </a>
+            <a class="hide-for-{_global_.role}" onclick="copyArtistLink()" title="Скопировать ссылку"><svg class="ml-1" width="28" height="28" viewBox="0 0 28 28" fill="none" xmlns="http://www.w3.org/2000/svg">
+                        <path d="M11.9436 14.9336C12.373 15.5077 12.9209 15.9827 13.5501 16.3265C14.1793 16.6703 14.8751 16.8747 15.5902 16.9259C16.3054 16.9771 17.0231 16.8739 17.6949 16.6233C18.3667 16.3728 18.9767 15.9806 19.4836 15.4736L22.4836 12.4736C23.3944 11.5305 23.8983 10.2675 23.8869 8.95655C23.8755 7.64557 23.3497 6.39151 22.4227 5.46447C21.4956 4.53743 20.2415 4.01158 18.9306 4.00019C17.6196 3.9888 16.3566 4.49277 15.4136 5.40356L13.6936 7.11356M15.9436 12.9336C15.5141 12.3594 14.9662 11.8844 14.337 11.5406C13.7078 11.1969 13.0121 10.9924 12.2969 10.9412C11.5818 10.89 10.864 10.9932 10.1922 11.2438C9.52045 11.4944 8.91044 11.8865 8.40356 12.3936L5.40356 15.3936C4.49277 16.3366 3.9888 17.5996 4.00019 18.9106C4.01158 20.2216 4.53743 21.4756 5.46447 22.4027C6.39151 23.3297 7.64557 23.8555 8.95655 23.8669C10.2675 23.8783 11.5305 23.3744 12.4736 22.4636L14.1836 20.7536" stroke="#1A1A1A" stroke-linecap="round" stroke-linejoin="round"></path>
+                    </svg></a>
+            <a class="hide-for-{_global_.role}" onclick="createArtistLink()" title="Обновить ссылку"><svg class="ml-1 mr-1 refr" width="28" height="28" viewBox="0 0 28 28" fill="none" xmlns="http://www.w3.org/2000/svg">
+            <path d="M25 5.99763V11.9976M25 11.9976H19M25 11.9976L20.36 7.63763C19.2853 6.56235 17.9556 5.77684 16.4952 5.35441C15.0348 4.93198 13.4911 4.88639 12.0083 5.22189C10.5255 5.5574 9.1518 6.26307 8.01547 7.27305C6.87913 8.28304 6.01717 9.56442 5.51 10.9976M3 21.9976V15.9976M3 15.9976H9M3 15.9976L7.64 20.3576C8.71475 21.4329 10.0444 22.2184 11.5048 22.6409C12.9652 23.0633 14.5089 23.1089 15.9917 22.7734C17.4745 22.4379 18.8482 21.7322 19.9845 20.7222C21.1209 19.7122 21.9828 18.4308 22.49 16.9976" stroke="#1A1A1A" stroke-linecap="round" stroke-linejoin="round"></path>
+            </svg></a>
+            <a id="accounting" class="hide-for-{_global_.role}" href="/{_global_.z}/form/77069826?FR_ArtistID=0&F_U=0" title="Взаиморасчеты 2">
+                <svg width="28" height="28" viewBox="0 0 28 28" fill="none" xmlns="http://www.w3.org/2000/svg">
+                <path d="M24.0001 9.12693C24.0001 10.1863 20.9492 11.0337 17.178 11.0337C16.4577 11.0337 15.7797 10.9913 15.1018 10.949C15.017 10.949 10.9492 10.4405 10.9068 10.3981M24 12.8136C24 13.8305 21.1187 14.678 17.517 14.7204M24 16.4997C24 17.5167 21.161 18.3217 17.6017 18.4065M10.3559 6.33021V10.6522M23.9999 6.33021V16.4573M24 5.7371C24 6.79642 20.9492 7.64388 17.178 7.64388C13.4068 7.64388 10.3559 6.79642 10.3559 5.7371C10.3559 4.67778 13.4068 3.83032 17.178 3.83032C20.9492 3.83032 24 4.67778 24 5.7371ZM17.4322 17.4322C17.4322 21.1611 14.4237 24.1695 10.6949 24.1695C7.00847 24.1695 4 21.1611 4 17.4322C4 13.7034 7.00847 10.6949 10.7373 10.6949C14.4237 10.7373 17.4322 13.7458 17.4322 17.4322ZM10.3558 21.7964V20.7371C9.76262 20.7371 9.12702 20.5253 8.74567 20.271L8.9999 19.5507C9.38126 19.8049 9.93211 20.0168 10.5253 20.0168C11.288 20.0168 11.7965 19.5931 11.7965 18.9998C11.7965 18.4066 11.3728 18.0676 10.6101 17.7286C9.50838 17.3049 8.87279 16.8388 8.87279 15.9066C8.87279 15.0168 9.50838 14.3812 10.483 14.2117V13.1524H11.1185V14.1693C11.7541 14.1693 12.1779 14.3388 12.4745 14.5507L12.2202 15.2286C12.0084 15.1015 11.5846 14.8897 10.9067 14.8897C10.1016 14.8897 9.80499 15.3558 9.80499 15.7795C9.80499 16.3303 10.1863 16.5846 11.1185 16.9659C12.2202 17.432 12.7711 17.9405 12.7711 18.9151C12.7711 19.7625 12.1779 20.5253 11.1185 20.6947V21.7964H10.3558Z" stroke="#1A1A1A"/>
+                </svg>
+            </a>
+             <font color="lightgray" id="copied" style="display:none;">Скопировано</font>
+            </h3>
+        </td><td align="right" id="period" colspan="4">&nbsp;</td>
+    </tr>
+    <tr class="helper blue-text" style="display:none">
+        <td colspan="14">
+            <ol class="mt-3">
+                <li><span class="black-text">Всего прослушиваний за всё время</span></li>
+                <li><span class="black-text">Общее вознаграждение по всем релизам, где фигурирует артист (без учёта доли артиста)</span></li>
+                <li><span class="black-text">Сумма вознаграждения в соответствии с долей артиста в треках</span></li>
+                <li><span class="black-text">Среднее значение процента артиста</span></li>
+                <li><span class="black-text">Доля вознаграждения артиста после вычета процента</span></li>
+                <li><span class="black-text">Выплаты, произведённые за прошлые периоды</span></li>
+                <li><span class="black-text">Сумма для выплаты артисту</span></li>
+                <li><span class="black-text">Сумма расходов на продюсирование проектов</span></li>
+                <li><span class="black-text">Сумма авансов, выданных артисту</span></li>
+                <li><span class="black-text">Сумма вознаграждения и количество прослушивания за выбранный период</span></li>
+            </ol>
+        </td>
+    </tr>
+    <tr><td colspan="11">&nbsp;</td><td colspan="2" align="center" class="helper blue-text" style="display:none;">10</td></tr>
+    <tr>
+        <td colspan="2" style="background-color: #000000; color: #eeeeee" align="center">Артист</td>
+        <td colspan="4" id="artist" style="background-color: #ff0000; color: #eeeeee" align="center">&nbsp;</td>
+        <td colspan="3" align="center" class="extra-calcs">
+            
+        </td>
+        <td colspan="1">
+        <td colspan="1" style="background-color: #000000; color: #eeeeee" align="center">За период</td>
+        <td id="total" colspan="1" style="background-color: #ff0000; color: #eeeeee" align="center" title="Выручка за период">&nbsp;</td>
+    </tr>
+    <tr>
+        <td colspan="7">&nbsp;</td>
+        <td colspan="1">
+        <td colspan="2" class="extra-calcs">
+        <td id="sales-period" colspan="1" style="border: 1px solid #dee2e6;" align="center" title="Прослушиваний за период">&nbsp;</td>
+    </tr>
+    <tr><td colspan="12" style="height: 8px;"></td></tr>
+    <tr class="helper blue-text" style="font-weight:700; display:none; color: #1283da;">
+        <td colspan="2" align="center">1</td>
+        <td colspan="2" align="center">2</td>
+        <td colspan="1" align="center">3</td>
+        <td colspan="1" align="center">4</td>
+        <td colspan="1" align="center">5</td>
+        <td colspan="1" align="center">6</td>
+        <td colspan="1" align="center" class="extra-calcs">7</td>
+        <td colspan="1" align="center" class="extra-calcs">8</td>
+        <td colspan="1" align="center">9</td>
+    </tr>
+    <tr>
+        <td colspan="2" style="background-color: #000000; color: #eeeeee" align="center">Прослушиваний</td>
+        <td colspan="2" style="background-color: #ff0000; color: #eeeeee" align="center">Общий вал</td>
+        <td colspan="1" style="background-color: #000000; color: #eeeeee" align="center" class="pl-2 pr-2">Вал артиста</td>
+        <td colspan="1" style="background-color: #ff0000; color: #eeeeee" align="center" class="pl-2 pr-2">Процент артиста</td>
+        <td colspan="1" style="background-color: #000000; color: #eeeeee" align="center" class="pl-2 pr-2">Артисту всего</td>
+        <td colspan="1" style="background-color: #ff0000; color: #eeeeee" align="center" class="pl-2 pr-2">Уже выплачено</td>
+        <td colspan="2" style="background-color: #000000; color: #eeeeee" align="center" class="extra-calcs">Расходы</td>
+        <td colspan="1" style="background-color: #ff0000; color: #eeeeee" align="center" class="extra-calcs">Авансы</td>
+        <td colspan="1" style="background-color: #000000; color: #eeeeee" align="center">К выплате</td>
+    </tr>
+    <tr>
+        <td colspan="2" style="border: 1px solid #dee2e6;" id="sales" align="center">&nbsp;</td>
+        <td colspan="2" style="border: 1px solid #dee2e6;" id="gross" align="center">&nbsp;</td>
+        <td colspan="1" style="border: 1px solid #dee2e6;" id="grossshare" align="center">&nbsp;</td>
+        <td colspan="1" style="border: 1px solid #dee2e6;" id="percent" align="center">&nbsp;</td>
+        <td colspan="1" style="border: 1px solid #dee2e6;" id="net" align="center">&nbsp;</td>
+        <td colspan="1" style="border: 1px solid #dee2e6;" id="paid" align="center">&nbsp;</td>
+        <td colspan="2" style="border: 1px solid #dee2e6;" id="calcs" align="center" class="extra-calcs">&nbsp;</td>
+        <td colspan="1" style="border: 1px solid #dee2e6;" id="advances" align="center" class="extra-calcs">&nbsp;</td>
+        <td colspan="1" style="border: 1px solid #dee2e6;" id="topay" align="center">&nbsp;</td>
+    </tr>
+    <tr>
+        <td colspan="1" align="center">&nbsp;</td>
+        <td colspan="11" align="right" class="pr-0 pb-1 pt-1" id="pages" style="display:none">
+            Страница <select class="pages" id="pageSelected" onchange="$('#page tr').hide();$('#page .c'+this.value).show()"></select>
+        </td>
+    </tr>
+    <tr style="background-color:#f9f9f9;">
+        <!--
+        <td align="CENTER" class="td"><b>Артист</b></td>
+        -->
+		<td align="CENTER" class="td"><b>Кол-во</b></td>
+		<td align="CENTER" class="td"><b>Общий вал</b></td>
+		
+		<td align="CENTER" class="td"><b>% выплаты</b></td>
+		<td align="CENTER" class="td"><b>Вал артиста</b></td>
+		<td align="CENTER" class="td"><b>Альбом</b></td>
+		<td align="CENTER" class="td"><b>Трек</b></td>
+		<td align="CENTER" class="td"><b>Страна</b></td>
+		<td align="CENTER" class="td"><b>Площадка</b></td>
+		<!-- td align="CENTER" class="td"><b>Stream</b></td -->
+		<td align="CENTER" class="td"><b>Формат контента</b></td>
+		<td align="CENTER" class="td"><b>Тип использования</b></td>
+		<td align="CENTER" class="td"><b>Дата отчета</b></td>
+		<td align="CENTER" class="td"><b>Отчетный период</b></td>
+		<td align="CENTER" class="td"><b>Вид прав</b></td>
+	</tr>
+</thead>
+<tbody id="page">
+</tbody>
+</table>
+<script>
+var ajax='<img src="/i/ajax.gif">',pages,pageCount=0,sessions=0,sessionsLimit=1,pageSize=100,limit=1000,artist,repTable=$('#repTable>tbody').html(),d=new Date(),lineCount,total,totalCount;
+$('#TO_DATE').val(d.toISOString().substr(0, 10));
+$('#FR_DATE').val(d.getFullYear()+'-'+('0'+(d.getMonth()+1)).substr(-2)+'-01');
+$('.reps').change(function(){
+    if($('#FR_ArtistID').val()>0){
+        $('#topay').attr('calcs','');
+        if($('#FR_AlbumID').val()>0)
+            intApi('GET','report/74673632?JSON_KV&FR_ArtistID='+$('#FR_ArtistID').val()+'&FR_AlbumID='+$('#FR_AlbumID').val(),'brief');
+        else
+            intApi('GET','report/74673473?JSON_KV&FR_ArtistID='+$('#FR_ArtistID').val(),'brief');
+        intApi('GET','report/7425422?JSON&FR_ArtistID='+$('#FR_ArtistID').val(),'albums');
+        newApi('GET','report/63365330?JSON&FR_ArtistID='+$('#FR_ArtistID').val()+($('#FR_AlbumID').val()>0?'&FR_AlbumID='+$('#FR_AlbumID').val():'')
+                                    +'&FR_DATE='+byId('FR_DATE').value.replace(/-/g,'')+'&TO_DATE='+byId('TO_DATE').value.replace(/-/g,''),'periodTotal');
+        newApi('GET','report/74694503?JSON&FR_ArtistID='+$('#FR_ArtistID').val(),'showExtra');
+        $('#FR_AlbumID').html('');
+        $('#repTable>tbody').html(repTable);
+        artist=$('#'+$('#FR_ArtistID').val()).html();
+        $('#artist').html(artist);
+        byId('json').href=byId('json').href.replace(/(FR_ArtistID=)[\d]*/ig,'$1'+byId('FR_ArtistID').value);
+        byId('accounting').href=byId('accounting').href.replace(/(FR_ArtistID=|F_U=)[\d]*/ig,'$1'+byId('FR_ArtistID').value);
+        byId('sales').innerHTML=byId('gross').innerHTML=byId('grossshare').innerHTML=byId('percent').innerHTML=byId('net').innerHTML=byId('paid').innerHTML=byId('topay').innerHTML=byId('total').innerHTML=byId('sales-period').innerHTML=ajax;
+        $('#details').html(ajax);
+    }
+});
+$('.albums').change(function(){
+    if($('#FR_ArtistID').val()>0){
+        if($('#FR_AlbumID').val()>0)
+            intApi('GET','report/74673632?JSON_KV&FR_ArtistID='+$('#FR_ArtistID').val()+'&FR_AlbumID='+$('#FR_AlbumID').val(),'brief');
+        else
+            intApi('GET','report/74673473?JSON_KV&FR_ArtistID='+$('#FR_ArtistID').val(),'brief');
+        $('#repTable>tbody').html(repTable);
+        byId('sales').innerHTML=byId('gross').innerHTML=byId('grossshare').innerHTML=byId('percent').innerHTML=byId('net').innerHTML=byId('paid').innerHTML=byId('topay').innerHTML=byId('total').innerHTML=byId('sales-period').innerHTML=ajax;
+        $('#details').html(ajax);
+    }
+});
+$('.dp').change(function(){
+    getDetails();
+});
+$('.sc').click(function(){
+    getDetails();
+});
+function createArtistLinkDone(json,s){
+    if(json.obj){
+        $('#'+json.obj).attr('s',s);
+        copyArtistLink();
+    }
+}
+function createArtistLink(){
+    const i=$('#FR_ArtistID').val();
+    const s=(Math.random().toString(36)+Math.random().toString(36)).replace(/\./g,'').substr(1,16);
+    if(i)
+        newApi('POST','_m_set/'+i+'?JSON&t74673528='+s,'createArtistLinkDone','',s);
+}
+function copyArtistLink(){
+    const i=$('#FR_ArtistID').val();
+    const s=$('#'+i).attr('s');
+    if(s)
+        copy2buffer('https://'+location.host+'/'+db+'?s='+s);
+    else
+        createArtistLink(i);
+}
+function copy2buffer(t){
+    var $temp = $("<input>");
+    $("body").append($temp);
+    $temp.val(t).select();
+    document.execCommand("copy");
+    $temp.remove();
+    $('#copied').show().delay(2500).slideUp(400);
+}
+function showExtra(json){
+    let i,h;
+    $('#calcs,#advances').html('');
+    $('.extra-calcs').hide();
+    for(i in json.columns)
+        if(json.columns[i].name==='Сальдо'&&json.data[i][0]){
+            h=numberWithSpaces(myRound(json.data[i][0]));
+            $('#topay').html(h);
+            $('#topay').attr('calcs',h);
+        }
+        else if((json.columns[i].name==='Расходы'||json.columns[i].name==='Смежные')&&json.data[i][0]){
+            $('.extra-calcs').show();
+            $('#calcs').html($('#calcs').html()+json.columns[i].name+': '+json.data[i][0]+'<br>');
+        }
+        else if(json.columns[i].name==='Авансы'&&json.data[i][0]){
+            $('.extra-calcs').show();
+            $('#advances').html(json.data[i][0]||0);
+        }
+}
+function periodTotal(json){
+    for(var i in json.columns)
+        byId(json.columns[i].name).innerHTML=numberWithSpaces(json.columns[i].totals||0);
+}
+function ruDate(d){
+    return d.substr(8,2)+'.'+d.substr(5,2)+'.'+d.substr(0,4);
+}
+$('.reps').trigger('change');
+function export2Excel(){
+    $('#period').html(ruDate(byId('FR_DATE').value)+' &mdash; '+ruDate(byId('TO_DATE').value));
+    $('#page tr').show();
+    var pages=$('#pages').html();
+    $('#pages').html('');
+    var myBlob =  new Blob( [$('#repTable').wrap('<p/>').parent().html()] , {type:'application/vnd.ms-excel'});
+    var url = window.URL.createObjectURL(myBlob);
+    var a = document.createElement("a");
+    document.body.appendChild(a);
+    a.href = url;
+    a.download = artist+".xls";
+    a.click();
+    //adding some delay in removing the dynamically created link solved the problem in FireFox
+    setTimeout(function() {window.URL.revokeObjectURL(url);},0);
+    $('#pages').html(pages);
+    $('#page tr').hide();
+    $('#page .c'+($('#pageSelected').val()||0)).show();
+    $('#period').html('');
+}
+// Функция для отправки асинхронного запроса по https api с обработкой его результата
+function intApi(m,u,b,vars,index){ // Параметры: метод, адрес, действие - ветка switch, параметры, ID целевого элемента
+    vars=vars||''; // По умолчанию список параметров пуст
+    var h='',i,j,json,obj=new XMLHttpRequest(); // Объявляем переменную под JSON и API по HTTPS
+    obj.open(m,'/'+db+'/'+u,true); // Открываем асинхронное соединение заданным методом по нужному адресу
+    if(m=='POST'){ // Если это POST запрос, то передаем заданные параметры
+        obj.setRequestHeader('Content-Type','application/x-www-form-urlencoded');
+        vars='_xsrf='+xsrf+'&'+vars; // добавляем токен xsrf, необходимый для POST-запроса
+    }
+    obj.onload=function(e){ // Когда запрос вернет результат - сработает эта функция
+        try{ // в this.responseText лежит ответ от сервера
+            json=JSON.parse(this.responseText); // Пытаемся разобрать ответ как JSON
+        }
+        catch(e){ // Если произошла ошибка при разборе JSON
+            h=this.responseText;
+        }
+        obj.abort(); // Закрываем соединение
+        switch(b){ // Отрабатываем заданную команду - переходим в соответствующую ветку case
+            case 'albums':
+                h='<option value="">все альбомы</option>';
+                for(i in json.data[0])
+                    h+='<option value="'+json.data[0][i]+'">'+json.data[1][i]+'</option>';
+                $('#FR_AlbumID').html(h).select2();
+                break;
+            case 'brief':
+                if (json && json[0]) {
+                    byId('sales').innerHTML=numberWithSpaces(json[0]['Quantity']||0);
+                    byId('gross').innerHTML=numberWithSpaces(myRound(json[0]['Gross']||0));
+                    byId('grossshare').innerHTML=numberWithSpaces((myRound(json[0]['Net']||0)*100/parseFloat(json[0]['Ставка'])).toFixed(2));
+                    byId('percent').innerHTML=parseFloat(json[0]['Ставка']).toFixed(1);
+                    byId('net').innerHTML=numberWithSpaces(myRound(json[0]['Net']||0));
+                    byId('paid').innerHTML=numberWithSpaces(myRound(json[0]['Paid']||0));
+                    h=$('#topay').attr('calcs')!==''?$('#topay').attr('calcs'):numberWithSpaces(myRound(myRound(json[0]['Net']||0)-myRound(json[0]['Paid']||0)));
+                    $('#topay').html(h);
+                    getDetails();
+                }
+                else{
+                    byId('sales').innerHTML=0;
+                    byId('gross').innerHTML=0;
+                    byId('grossshare').innerHTML=0;
+                    byId('percent').innerHTML=0;
+                    byId('net').innerHTML=0;
+                    byId('paid').innerHTML=0;
+                    byId('topay').innerHTML=0;
+                    getDetails();
+                }
+                break;
+            case 'details':
+                for(i in json.data[0]){
+                    h+='<tr class="c'+Math.floor(lineCount++/pageSize)+'"'+(lineCount<=pageSize?'':' style="display:none"')+'>';
+                    for(j in json.data)
+                        if(json.columns[j].format==='SIGNED')
+                            h+='<td class="td td-r" style=\'mso-number-format:"# ##0.00"\'>'+json.data[j][i]+'</td>';
+                        else if(json.columns[j].format==='NUMBER')
+                            h+='<td class="td td-r" style=\'mso-number-format:"# ###"\'>'+json.data[j][i]+'</td>';
+                        else
+                            h+='<td class="td">'+json.data[j][i]+'</td>';
+                    h+='</tr>';
+                }
+                //total+=parseFloat(json.columns[3].totals||0);
+                //totalCount+=parseInt(json.columns[0].totals||0);
+                $('#repTable>tbody').html($('#repTable>tbody').html()+h);
+                if(++i==limit){
+                    getPage();
+                    $('#progress').html('<br />'+ajax+' Загрузка '+lineCount);
+                }
+                else{
+                    $('#progress').hide(),$('#export').show();
+                    if(lineCount>pageSize){
+                        h='';
+                        for(i=0;i<=Math.floor(lineCount/pageSize);i++)
+                            h+='<option value="'+i+'">'+(i+1)+'</option>';
+                        $('#pageSelected').html(h);
+                        $('#pages').show();
+                    }
+                    else
+                        $('#pages').hide();
+                     //byId('total').innerHTML=numberWithSpaces(myRound(total));
+                     //byId('sales-period').innerHTML=numberWithSpaces(Math.round(totalCount));
+                }
+                break;
+        }
+    }
+    obj.send(vars); // отправили запрос и теперь будем ждать ответ, а пока - выходим
+}
+function getDetails(){
+    lineCount=pageCount=total=totalCount=0;
+    byId('total').innerHTML=byId('sales-period').innerHTML=ajax;
+    $('#export').hide();
+    $('#progress').html('<br />'+ajax+' Загрузка...').show();
+    $('#repTable>tbody').html(repTable);
+//    getPage();
+    curArtist=$('#FR_ArtistID').val();
+    newApi('GET','report/63365330?JSON&FR_ArtistID='+curArtist+($('#FR_AlbumID').val()>0?'&FR_AlbumID='+$('#FR_AlbumID').val():'')
+            +'&FR_DATE='+byId('FR_DATE').value.replace(/-/g,'')+'&TO_DATE='+byId('TO_DATE').value.replace(/-/g,''),'periodTotal');
+    newApi('GET','report/74695294?JSON_KV&FR_ArtistID='+curArtist+($('#FR_AlbumID').val()>0?'&FR_AlbumID='+$('#FR_AlbumID').val():'')
+            +'&FR_DATE='+byId('FR_DATE').value.replace(/-/g,'')+'&TO_DATE='+byId('TO_DATE').value.replace(/-/g,'')
+            ,'getBills','',curArtist);
+}
+let apisFetching=0,bills,curArtist;
+function getBills(json){
+    bills=json;
+    getOneBill();
+}
+function getOneBill(){
+    if(apisFetching>10)
+        return;
+    let d,todo;
+    for(let j in bills)
+        if(!bills[j].done){
+            bills[j].done=true;
+            todo=true;
+            d=d||bills[j].DATE;
+            newApi('GET','report/74695136?JSON&FR_ArtistID='+curArtist+($('#FR_AlbumID').val()>0?'&FR_AlbumID='+$('#FR_AlbumID').val():'')
+                    +'&FR_DATE='+bills[j].DATE+'&FR_ISRC='+bills[j].isrcId,'getPageDone','',bills[j].DATE);
+            $('#progress').html('<br />'+ajax+' Загрузка '+lineCount);
+            apisFetching++;
+            if(d!==bills[j].DATE||apisFetching>10){
+                console.log('return '+d+' '+bills[j].DATE+' '+bills[j].isrcId);
+                return;
+            }
+            console.log('continue '+d+' '+bills[j].DATE+' '+bills[j].isrcId);
+        }
+    if(todo)
+        return;
+    $('#progress').hide(),$('#export').show();
+    if(lineCount>pageSize){
+        h='';
+        for(i=0;i<=Math.floor(lineCount/pageSize);i++)
+            h+='<option value="'+i+'">'+(i+1)+'</option>';
+        $('#pageSelected').html(h);
+        $('#pages').show();
+    }
+    else
+        $('#pages').hide();
+}
+function getPageDone(json){
+    let i,j,h='';
+    apisFetching--;
+    for(i in json.data[0]){
+        h+='<tr class="c'+Math.floor(lineCount++/pageSize)+'"'+(lineCount<=pageSize?'':' style="display:none"')+'>';
+        for(j in json.data)
+            if(json.columns[j].format==='SIGNED')
+                h+='<td class="td td-r" style=\'mso-number-format:"# ##0.00"\'>'+json.data[j][i]+'</td>';
+            else if(json.columns[j].format==='NUMBER')
+                h+='<td class="td td-r" style=\'mso-number-format:"# ###"\'>'+json.data[j][i]+'</td>';
+            else
+                h+='<td class="td">'+json.data[j][i]+'</td>';
+        h+='</tr>';
+    }
+    $('#repTable>tbody').html($('#repTable>tbody').html()+h);
+    getOneBill();
+}
+function getPage(){
+    intApi('GET','report/74695136?JSON&FR_ArtistID='+$('#FR_ArtistID').val()+'&FR_DATE='+byId('FR_DATE').value.replace(/-/g,'')+'&TO_DATE='+byId('TO_DATE').value.replace(/-/g,'')
+                +($('#FR_AlbumID').val()===''?'':'&FR_AlbumID='+$('#FR_AlbumID').val())
+                +'&LIMIT='+(pageCount*limit)+','+limit,'details');
+    pageCount++;
+}
+function CBR_XML_Daily_Ru(rates) {
+    $('#rate').html(rates.Valute.USD.Value.toFixed(2));
+}
+// Округление 
+function myRound(v){
+    return (Math.round((parseFloat(v) + Number.EPSILON) * 100) / 100).toFixed(2);
+}
+function numberWithSpaces(x) {
+  var parts = x.toString().split(".");
+  parts[0] = parts[0].replace(/\B(?=(\d{3,3})+(?!\d))/g, " ");
+  return parts.join(".");
+}
+$(document).ready(function() {
+    $('.reps').select2();
+});
+</script>
+
+<script src="//www.cbr-xml-daily.ru/daily_jsonp.js"></script>
+<script src="/js/exceljs.min.js"></script>
+<link href="https://cdn.jsdelivr.net/npm/select2@4.1.0-rc.0/dist/css/select2.min.css" rel="stylesheet" />
+<script src="https://cdn.jsdelivr.net/npm/select2@4.1.0-rc.0/dist/js/select2.min.js"></script>
