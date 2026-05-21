@@ -46,6 +46,7 @@
         <td id="export" class="pr-3">
             &nbsp;<br />
             <a onclick="export2Excel()" value="XLS" style="border: 1px solid; -moz-border-radius: 5px; -webkit-border-radius:5px; -khtml-border-radius:5px; border-radius:5px; padding:3px; display: inline-block">XLS</a>
+            &nbsp;&nbsp;<a onclick="export2Xlsx()" value="XLSX" title="Корректный XLSX (не HTML внутри)" style="border: 1px solid; -moz-border-radius: 5px; -webkit-border-radius:5px; -khtml-border-radius:5px; border-radius:5px; padding:3px; display: inline-block">XLSX</a>
             &nbsp;&nbsp;<a id="json" href="/{_global_.z}/report/74695136?JSON&FR_ArtistID=0" style="border: 1px solid; -moz-border-radius: 5px; -webkit-border-radius:5px; -khtml-border-radius:5px; border-radius:5px; padding:3px; display: inline-block">JSON</a>
         </td>
         <td id="progress" class="pr-3">
@@ -306,6 +307,102 @@ function export2Excel(){
     $('#page tr').hide();
     $('#page .c'+($('#pageSelected').val()||0)).show();
     $('#period').html('');
+}
+
+// Issue #26: корректный XLSX-экспорт того же контента, что и export2Excel,
+// но через настоящий формат (ExcelJS), а не HTML-Blob с MIME application/vnd.ms-excel.
+// Числа сохраняются как числа (с учётом mso-number-format на ячейках), а не как строки.
+async function export2Xlsx(){
+    if(typeof ExcelJS==='undefined'){
+        alert('Библиотека ExcelJS не загружена');
+        return;
+    }
+    // Парсер чисел: значения в DOM имеют пробелы-разделители разрядов и точку как десятичный знак
+    // (см. numberWithSpaces / myRound). Возвращаем число для xlsx-ячейки или исходный текст, если
+    // распарсить не удалось.
+    var toNum=function(s){
+        if(s===null||s===undefined) return null;
+        var t=String(s).replace(/\s|&nbsp;| /g,'').replace(',','.');
+        if(t==='') return null;
+        var n=parseFloat(t);
+        return isFinite(n) ? n : s;
+    };
+    // Названия колонок данных (соответствуют шапке repTable, см. строки 174-188).
+    var headers=['Кол-во','Общий вал','% выплаты','Вал артиста','Альбом','Трек','Страна','Площадка','Формат контента','Тип использования','Дата отчета','Отчетный период','Вид прав'];
+
+    var wb=new ExcelJS.Workbook();
+    var sheetName=String(artist||'Отчёт').replace(/[\\/?*:\[\]]/g,' ').substr(0,31)||'Отчёт';
+    var ws=wb.addWorksheet(sheetName);
+
+    // Сводка: артист, период, итоги по показателям.
+    ws.addRow(['Артист', $('#artist').text().trim()]);
+    ws.addRow(['Период', ruDate(byId('FR_DATE').value)+' — '+ruDate(byId('TO_DATE').value)]);
+    ws.addRow([]);
+    var totals=[
+        ['Прослушиваний',         toNum($('#sales').text())],
+        ['Общий вал',             toNum($('#gross').text())],
+        ['Вал артиста',           toNum($('#grossshare').text())],
+        ['Процент артиста, %',    toNum($('#percent').text())],
+        ['Артисту всего',         toNum($('#net').text())],
+        ['Уже выплачено',         toNum($('#paid').text())],
+        ['Расходы',               $('#calcs').text().trim()],
+        ['Авансы',                toNum($('#advances').text())],
+        ['К выплате',             toNum($('#topay').text())],
+        ['Выручка за период',     toNum($('#total').text())],
+        ['Прослушиваний за период', toNum($('#sales-period').text())]
+    ];
+    totals.forEach(function(r){ ws.addRow(r); });
+    ws.addRow([]);
+
+    // Шапка таблицы.
+    var headerRow=ws.addRow(headers);
+    headerRow.font={bold:true};
+
+    // Данные. Берём ВСЕ строки из #page (включая скрытые пагинацией), чтобы в xlsx попал
+    // полный отчёт. Числовой формат ячейки определяется по mso-number-format на td
+    // (его уже выставляет getPageDone / details для SIGNED и NUMBER).
+    $('#page tr').each(function(){
+        var cells=$(this).find('td');
+        if(cells.length===0) return;
+        var row=[], formats=[];
+        cells.each(function(){
+            var $td=$(this);
+            var text=$td.text().trim();
+            var style=String($td.attr('style')||'');
+            if(style.indexOf('# ##0.00')!==-1){
+                var n=toNum(text);
+                row.push(typeof n==='number' ? n : text);
+                formats.push('#,##0.00');
+            } else if(style.indexOf('# ###')!==-1){
+                var i=toNum(text);
+                row.push(typeof i==='number' ? i : text);
+                formats.push('#,##0');
+            } else {
+                row.push(text);
+                formats.push(null);
+            }
+        });
+        var r=ws.addRow(row);
+        formats.forEach(function(fmt,idx){
+            if(fmt) r.getCell(idx+1).numFmt=fmt;
+        });
+    });
+
+    // Ширина колонок: грубо подгоняем под содержимое заголовков.
+    ws.columns.forEach(function(col,idx){
+        var h=headers[idx]||'';
+        col.width=Math.max(10, h.length+2);
+    });
+
+    var buf=await wb.xlsx.writeBuffer();
+    var blob=new Blob([buf],{type:'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'});
+    var url=window.URL.createObjectURL(blob);
+    var a=document.createElement('a');
+    document.body.appendChild(a);
+    a.href=url;
+    a.download=(artist||'report')+'.xlsx';
+    a.click();
+    setTimeout(function(){ window.URL.revokeObjectURL(url); document.body.removeChild(a); },0);
 }
 // Функция для отправки асинхронного запроса по https api с обработкой его результата
 function intApi(m,u,b,vars,index){ // Параметры: метод, адрес, действие - ветка switch, параметры, ID целевого элемента
