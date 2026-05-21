@@ -639,6 +639,8 @@ $(document).ready(function() {
 </script>
 
 <script src="//www.cbr-xml-daily.ru/daily_jsonp.js"></script>
-<script src="/js/exceljs.min.js"></script>
+<!-- Issue #29: грузим ExcelJS с CDN с фиксированной версией. Локальная сборка
+     /js/exceljs.min.js устаревшая и не применяет стили (fills/borders/fonts) к ячейкам. -->
+<script src="https://cdn.jsdelivr.net/npm/exceljs@4.4.0/dist/exceljs.min.js"></script>
 <link href="https://cdn.jsdelivr.net/npm/select2@4.1.0-rc.0/dist/css/select2.min.css" rel="stylesheet" />
 <script src="https://cdn.jsdelivr.net/npm/select2@4.1.0-rc.0/dist/js/select2.min.js"></script>
