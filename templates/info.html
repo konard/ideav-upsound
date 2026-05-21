@@ -327,6 +327,29 @@ async function export2Xlsx(){
         var n=parseFloat(t);
         return isFinite(n) ? n : s;
     };
+    // Цвета и рамки повторяют HTML-разметку <thead> repTable.
+    var COL_BLACK='FF000000', COL_RED='FFFF0000', COL_LIGHT='FFEEEEEE';
+    var COL_GREY_BG='FFF9F9F9', COL_BORDER='FFDEE2E6';
+    var thinBorder={
+        top:    {style:'thin', color:{argb:COL_BORDER}},
+        left:   {style:'thin', color:{argb:COL_BORDER}},
+        bottom: {style:'thin', color:{argb:COL_BORDER}},
+        right:  {style:'thin', color:{argb:COL_BORDER}}
+    };
+    var fillSolid=function(argb){ return {type:'pattern', pattern:'solid', fgColor:{argb:argb}}; };
+    // Стили пары "label / value" в шапке сводки — лейбл чёрный, значение красное (см. HTML).
+    var styleLabel=function(cell){
+        cell.fill=fillSolid(COL_BLACK);
+        cell.font={color:{argb:COL_LIGHT}, bold:true};
+        cell.alignment={horizontal:'center', vertical:'middle'};
+        cell.border=thinBorder;
+    };
+    var styleValue=function(cell){
+        cell.fill=fillSolid(COL_RED);
+        cell.font={color:{argb:COL_LIGHT}, bold:true};
+        cell.alignment={horizontal:'center', vertical:'middle'};
+        cell.border=thinBorder;
+    };
     // Названия колонок данных (соответствуют шапке repTable, см. строки 174-188).
     var headers=['Кол-во','Общий вал','% выплаты','Вал артиста','Альбом','Трек','Страна','Площадка','Формат контента','Тип использования','Дата отчета','Отчетный период','Вид прав'];
 
@@ -334,37 +357,60 @@ async function export2Xlsx(){
     var sheetName=String(artist||'Отчёт').replace(/[\\/?*:\[\]]/g,' ').substr(0,31)||'Отчёт';
     var ws=wb.addWorksheet(sheetName);
 
-    // Сводка: артист, период, итоги по показателям.
-    ws.addRow(['Артист', $('#artist').text().trim()]);
-    ws.addRow(['Период', ruDate(byId('FR_DATE').value)+' — '+ruDate(byId('TO_DATE').value)]);
+    // -- Сводка: артист, период --
+    var rArtist=ws.addRow(['Артист', $('#artist').text().trim()]);
+    styleLabel(rArtist.getCell(1)); styleValue(rArtist.getCell(2));
+    rArtist.height=20;
+    var rPeriod=ws.addRow(['Период', ruDate(byId('FR_DATE').value)+' — '+ruDate(byId('TO_DATE').value)]);
+    styleLabel(rPeriod.getCell(1)); styleValue(rPeriod.getCell(2));
+    rPeriod.height=20;
     ws.addRow([]);
+
+    // -- Сводка: итоги. Лейбл — чёрная плашка, значение — красная, как в HTML --
     var totals=[
-        ['Прослушиваний',         toNum($('#sales').text())],
-        ['Общий вал',             toNum($('#gross').text())],
-        ['Вал артиста',           toNum($('#grossshare').text())],
-        ['Процент артиста, %',    toNum($('#percent').text())],
-        ['Артисту всего',         toNum($('#net').text())],
-        ['Уже выплачено',         toNum($('#paid').text())],
-        ['Расходы',               $('#calcs').text().trim()],
-        ['Авансы',                toNum($('#advances').text())],
-        ['К выплате',             toNum($('#topay').text())],
-        ['Выручка за период',     toNum($('#total').text())],
-        ['Прослушиваний за период', toNum($('#sales-period').text())]
+        ['Прослушиваний',         toNum($('#sales').text()),       '#,##0'],
+        ['Общий вал',             toNum($('#gross').text()),       '#,##0.00'],
+        ['Вал артиста',           toNum($('#grossshare').text()),  '#,##0.00'],
+        ['Процент артиста, %',    toNum($('#percent').text()),     '0.0'],
+        ['Артисту всего',         toNum($('#net').text()),         '#,##0.00'],
+        ['Уже выплачено',         toNum($('#paid').text()),        '#,##0.00'],
+        ['Расходы',               $('#calcs').text().trim(),       null],
+        ['Авансы',                toNum($('#advances').text()),    '#,##0.00'],
+        ['К выплате',             toNum($('#topay').text()),       '#,##0.00'],
+        ['Выручка за период',     toNum($('#total').text()),       '#,##0.00'],
+        ['Прослушиваний за период', toNum($('#sales-period').text()), '#,##0']
     ];
-    totals.forEach(function(r){ ws.addRow(r); });
+    totals.forEach(function(item){
+        var r=ws.addRow([item[0], item[1]]);
+        r.height=18;
+        styleLabel(r.getCell(1));
+        styleValue(r.getCell(2));
+        if(item[2] && typeof item[1]==='number'){
+            r.getCell(2).numFmt=item[2];
+            r.getCell(2).alignment={horizontal:'right', vertical:'middle'};
+        }
+    });
     ws.addRow([]);
 
-    // Шапка таблицы.
+    // -- Шапка таблицы данных: серый фон #f9f9f9 + жирный + рамка (как в HTML) --
     var headerRow=ws.addRow(headers);
-    headerRow.font={bold:true};
+    headerRow.height=22;
+    headers.forEach(function(_, idx){
+        var c=headerRow.getCell(idx+1);
+        c.fill=fillSolid(COL_GREY_BG);
+        c.font={bold:true};
+        c.alignment={horizontal:'center', vertical:'middle', wrapText:true};
+        c.border=thinBorder;
+    });
+    ws.views=[{state:'frozen', ySplit:headerRow.number}];  // фиксируем шапку при прокрутке
 
-    // Данные. Берём ВСЕ строки из #page (включая скрытые пагинацией), чтобы в xlsx попал
-    // полный отчёт. Числовой формат ячейки определяется по mso-number-format на td
-    // (его уже выставляет getPageDone / details для SIGNED и NUMBER).
+    // -- Данные. Все строки из #page (включая скрытые пагинацией), чтобы в xlsx попал --
+    // полный отчёт. Числовой формат и выравнивание определяются по mso-number-format
+    // на td (его уже выставляет getPageDone / details для SIGNED и NUMBER).
     $('#page tr').each(function(){
         var cells=$(this).find('td');
         if(cells.length===0) return;
-        var row=[], formats=[];
+        var row=[], meta=[];
         cells.each(function(){
             var $td=$(this);
             var text=$td.text().trim();
@@ -372,26 +418,38 @@ async function export2Xlsx(){
             if(style.indexOf('# ##0.00')!==-1){
                 var n=toNum(text);
                 row.push(typeof n==='number' ? n : text);
-                formats.push('#,##0.00');
+                meta.push({fmt:'#,##0.00', align:'right'});
             } else if(style.indexOf('# ###')!==-1){
                 var i=toNum(text);
                 row.push(typeof i==='number' ? i : text);
-                formats.push('#,##0');
+                meta.push({fmt:'#,##0', align:'right'});
             } else {
                 row.push(text);
-                formats.push(null);
+                meta.push({fmt:null, align:'left'});
             }
         });
         var r=ws.addRow(row);
-        formats.forEach(function(fmt,idx){
-            if(fmt) r.getCell(idx+1).numFmt=fmt;
+        meta.forEach(function(m, idx){
+            var c=r.getCell(idx+1);
+            if(m.fmt) c.numFmt=m.fmt;
+            c.alignment={horizontal:m.align, vertical:'middle'};
+            c.border=thinBorder;
         });
     });
 
-    // Ширина колонок: грубо подгоняем под содержимое заголовков.
-    ws.columns.forEach(function(col,idx){
-        var h=headers[idx]||'';
-        col.width=Math.max(10, h.length+2);
+    // -- Ширина колонок: подгоняем под максимальное содержимое (иначе числовые колонки --
+    // показывают ###, а длинный текст обрезается).
+    var dataRowCount=ws.rowCount - headerRow.number;
+    ws.columns.forEach(function(col, idx){
+        var maxLen=(headers[idx]||'').length;
+        for(var k=1; k<=dataRowCount; k++){
+            var v=ws.getRow(headerRow.number + k).getCell(idx+1).value;
+            if(v!=null){
+                var s=(typeof v==='number') ? v.toLocaleString('ru-RU') : String(v);
+                if(s.length>maxLen) maxLen=s.length;
+            }
+        }
+        col.width=Math.min(40, Math.max(10, maxLen + 2));
     });
 
     var buf=await wb.xlsx.writeBuffer();
