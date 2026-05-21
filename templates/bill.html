@@ -170,6 +170,11 @@ async function processArtists(artList, vars) {
       el.innerHTML = `${ ts } ${ message }`;
   }
 
+  // Issue #23: форматируем время выполнения запроса в секундах
+  function formatElapsed(startTime) {
+      return `${ ((Date.now() - startTime) / 1000).toFixed(2) }с`;
+  }
+
   function updateProgress() {
       const percent = Math.floor((completed / total) * 100);
       progressElement.textContent = `Прогресс: ${ percent }% (${ completed }/${ total })`;
@@ -193,6 +198,8 @@ async function processArtists(artList, vars) {
       activeRequests.set(artist, controller);
       const requestPrefix = `Запрос для ${ artist.Artist } (ID: ${ artist.ArtistID }, ISRCID:  ${ artist.ISRCID })...`;
       const requestLogId = log(`${ requestPrefix } ${ ajaxWait }`);
+      // Issue #23: запоминаем время старта запроса для вывода времени выполнения
+      const startTime = Date.now();
 
       try {
           const formData = new URLSearchParams();
@@ -223,7 +230,7 @@ async function processArtists(artList, vars) {
           activeRequests.delete(artist);
           completed++;
           updateProgress();
-          updateLog(requestLogId, `${ requestPrefix } ✅ Успешно`);
+          updateLog(requestLogId, `${ requestPrefix } ${ formatElapsed(startTime) } ✅ Успешно`);
 
           const actual = data && data[0] ? data[0].Quantity : null;
           if (actual !== null && String(actual) !== String(artist.Quantity)) {
@@ -239,7 +246,7 @@ async function processArtists(artList, vars) {
           // тихо выходим, он будет перезапущен из suspendedQueue.
           // Issue #21: убираем крутилку из строки запроса при остановке.
           if (error.name === 'AbortError' || suspendedSet.has(artist)) {
-              updateLog(requestLogId, `${ requestPrefix } ⏸ Приостановлен`);
+              updateLog(requestLogId, `${ requestPrefix } ${ formatElapsed(startTime) } ⏸ Приостановлен`);
               return null;
           }
 
@@ -269,7 +276,7 @@ async function processArtists(artList, vars) {
           if (retryCount < maxRetries) {
               const attempt = retryCount + 1;
               // Issue #21: заменяем крутилку в строке запроса сообщением о повторе.
-              updateLog(requestLogId, `${ requestPrefix } ⚠️ Ошибка, попытка ${ attempt }/${ maxRetries } через 5 секунд: ${ errorWithUrl }`);
+              updateLog(requestLogId, `${ requestPrefix } ${ formatElapsed(startTime) } ⚠️ Ошибка, попытка ${ attempt }/${ maxRetries } через 5 секунд: ${ errorWithUrl }`);
 
               let releaseLock;
               const prevLock = retryLock;
@@ -287,7 +294,7 @@ async function processArtists(artList, vars) {
           hasError = true;
           progressElement.textContent = `❌ Ошибка: ${ error.message }`;
           progressElement.style.color = 'red';
-          updateLog(requestLogId, `${ requestPrefix } ❌ ОШИБКА после ${ maxRetries } попыток: ${ errorWithUrl }`);
+          updateLog(requestLogId, `${ requestPrefix } ${ formatElapsed(startTime) } ❌ ОШИБКА после ${ maxRetries } попыток: ${ errorWithUrl }`);
 
           // Сохраняем состояние при ошибке (Issue #6)
           setCookie('billState', {
