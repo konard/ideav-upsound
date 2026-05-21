@@ -20,9 +20,10 @@ body{font-family:sans-serif;padding:12px;background:#fff;}
 button{padding:8px 16px;font-size:14px;cursor:pointer;margin-right:8px;}
 .mock{display:none;}
 table.preview{border-collapse:collapse;margin-top:16px;background:#fff;}
-table.preview td{padding:6px 10px;text-align:center;vertical-align:middle;font-size:13px;}
-.label{background:#000;color:#eeeeee;font-weight:700;}
-.value-red{background:#ff0000;color:#eeeeee;font-weight:700;}
+table.preview td{padding:6px 10px;text-align:center;vertical-align:middle;font-size:11px;}
+.title{font-size:14px;text-align:center;}
+.label{background:#000;color:#eeeeee;}
+.value-red{background:#ff0000;color:#eeeeee;}
 .value-bordered{border:1px solid #dee2e6;}
 .data-header{background:#f9f9f9;font-weight:700;border:1px solid #dee2e6;}
 .data-cell{border:1px solid #dee2e6;}
@@ -121,19 +122,22 @@ async function export2Xlsx(){
         right:  {style:'thin', color:{argb:COL_BORDER}}
     };
     var fillSolid=function(argb){ return {type:'pattern', pattern:'solid', fgColor:{argb:argb}}; };
+    // Issue #33: шрифт уменьшен (size 10), плашки больше не жирные.
+    var LABEL_SIZE=10;
     var styleLabel=function(cell){
         cell.fill=fillSolid(COL_BLACK);
-        cell.font={color:{argb:COL_LIGHT}, bold:true};
+        cell.font={color:{argb:COL_LIGHT}, size:LABEL_SIZE};
         cell.alignment={horizontal:'center', vertical:'middle', wrapText:true};
         cell.border=thinBorder;
     };
     var styleRed=function(cell){
         cell.fill=fillSolid(COL_RED);
-        cell.font={color:{argb:COL_LIGHT}, bold:true};
+        cell.font={color:{argb:COL_LIGHT}, size:LABEL_SIZE};
         cell.alignment={horizontal:'center', vertical:'middle', wrapText:true};
         cell.border=thinBorder;
     };
     var styleBordered=function(cell){
+        cell.font={size:LABEL_SIZE};
         cell.border=thinBorder;
         cell.alignment={horizontal:'center', vertical:'middle', wrapText:true};
     };
@@ -142,6 +146,15 @@ async function export2Xlsx(){
     var wb=new ExcelJS.Workbook();
     var sheetName=String(artist||'Отчёт').replace(/[\\/?*:\[\]]/g,' ').substr(0,31)||'Отчёт';
     var ws=wb.addWorksheet(sheetName);
+
+    // Issue #33: заголовок "Отчет по дистрибуции" сверху (как <h3> в HTML-шапке),
+    // объединён на всю ширину таблицы (13 колонок).
+    var rTitle = ws.addRow([]);
+    rTitle.height = 22;
+    rTitle.getCell(1).value = 'Отчет по дистрибуции';
+    rTitle.getCell(1).font = {size:14};
+    rTitle.getCell(1).alignment = {horizontal:'center', vertical:'middle'};
+    ws.mergeCells(rTitle.number, 1, rTitle.number, 13);
 
     // -- Сводка: Артист / Период (горизонтально, как в HTML) --
     // Row 1: [Артист][name (cols 3-8)][пусто 9-10][За период (11-12)][total (13)]
@@ -235,13 +248,13 @@ async function export2Xlsx(){
     // spacer
     ws.addRow([]);
 
-    // Шапка таблицы данных
+    // Шапка таблицы данных. Issue #33: размер шрифта уменьшен до 10.
     var headerRow=ws.addRow(headers);
     headerRow.height=22;
     headers.forEach(function(_, idx){
         var c=headerRow.getCell(idx+1);
         c.fill=fillSolid(COL_GREY_BG);
-        c.font={bold:true};
+        c.font={bold:true, size:LABEL_SIZE};
         c.alignment={horizontal:'center', vertical:'middle', wrapText:true};
         c.border=thinBorder;
     });
@@ -330,11 +343,13 @@ async function renderPreview(buffer){
             // классифицируем стиль
             var fillArgb = cell.fill && cell.fill.fgColor && cell.fill.fgColor.argb;
             var hasBorder = !!cell.border;
+            var fontSize = cell.font && cell.font.size;
             var className = '';
             if (fillArgb === 'FF000000') className = 'label';
             else if (fillArgb === 'FFFF0000') className = 'value-red';
             else if (fillArgb === 'FFF9F9F9') className = 'data-header';
             else if (hasBorder) className = 'value-bordered';
+            else if (fontSize === 14) className = 'title';
 
             var alignR = cell.alignment && cell.alignment.horizontal === 'right';
             var classAttr = className + (alignR ? ' right' : '');

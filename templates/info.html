@@ -340,19 +340,23 @@ async function export2Xlsx(){
     // Стили: лейбл — чёрная плашка, value-red — красная плашка (как у "Артист"/"name"
     // и "За период"/total в HTML), bordered — без фона, только рамка #dee2e6 (как у
     // значений метрик сводки и sales-period в HTML).
+    // Issue #33: шрифт уменьшен (size 10) и не жирный — раньше плашки выглядели слишком
+    // крупно и тяжело по сравнению с данными.
+    var LABEL_SIZE=10;
     var styleLabel=function(cell){
         cell.fill=fillSolid(COL_BLACK);
-        cell.font={color:{argb:COL_LIGHT}, bold:true};
+        cell.font={color:{argb:COL_LIGHT}, size:LABEL_SIZE};
         cell.alignment={horizontal:'center', vertical:'middle', wrapText:true};
         cell.border=thinBorder;
     };
     var styleRed=function(cell){
         cell.fill=fillSolid(COL_RED);
-        cell.font={color:{argb:COL_LIGHT}, bold:true};
+        cell.font={color:{argb:COL_LIGHT}, size:LABEL_SIZE};
         cell.alignment={horizontal:'center', vertical:'middle', wrapText:true};
         cell.border=thinBorder;
     };
     var styleBordered=function(cell){
+        cell.font={size:LABEL_SIZE};
         cell.border=thinBorder;
         cell.alignment={horizontal:'center', vertical:'middle', wrapText:true};
     };
@@ -362,6 +366,15 @@ async function export2Xlsx(){
     var wb=new ExcelJS.Workbook();
     var sheetName=String(artist||'Отчёт').replace(/[\\/?*:\[\]]/g,' ').substr(0,31)||'Отчёт';
     var ws=wb.addWorksheet(sheetName);
+
+    // -- Заголовок отчёта (issue #33): добавляем "Отчет по дистрибуции" сверху, --
+    // как в HTML-шапке (см. <h3> в шаблоне). Объединяем на всю ширину таблицы (13 колонок).
+    var rTitle = ws.addRow([]);
+    rTitle.height = 22;
+    rTitle.getCell(1).value = 'Отчет по дистрибуции';
+    rTitle.getCell(1).font = {size:14};
+    rTitle.getCell(1).alignment = {horizontal:'center', vertical:'middle'};
+    ws.mergeCells(rTitle.number, 1, rTitle.number, 13);
 
     // -- Сводка: горизонтальная раскладка, повторяющая HTML (issue #31). --
     // 13 колонок (как у таблицы данных), сводка распределяется через mergeCells.
@@ -453,13 +466,15 @@ async function export2Xlsx(){
 
     ws.addRow([]); // спейсер между сводкой и таблицей данных
 
-    // -- Шапка таблицы данных: серый фон #f9f9f9 + жирный + рамка (как в HTML) --
+    // -- Шапка таблицы данных: серый фон #f9f9f9 + жирный + рамка (как в HTML). --
+    // Issue #33: уменьшаем размер шрифта до 10 для согласованности с уменьшенными
+    // плашками сводки выше; жирность сохраняем — HTML-шапка обёрнута в <b>.
     var headerRow=ws.addRow(headers);
     headerRow.height=22;
     headers.forEach(function(_, idx){
         var c=headerRow.getCell(idx+1);
         c.fill=fillSolid(COL_GREY_BG);
-        c.font={bold:true};
+        c.font={bold:true, size:LABEL_SIZE};
         c.alignment={horizontal:'center', vertical:'middle', wrapText:true};
         c.border=thinBorder;
     });
